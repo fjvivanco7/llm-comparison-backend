@@ -1,0 +1,117 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// MODELO 1: Consultas/Prompts de usuarios
+model UserQuery {
+  id             Int             @id @default(autoincrement())
+  userPrompt     String
+  promptCategory String? // 'algorithms', 'web', 'utilities'
+  createdAt      DateTime        @default(now())
+  status         String          @default("processing") // 'processing', 'completed', 'failed'
+  generatedCodes GeneratedCode[]
+
+  @@map("user_queries")
+}
+
+model GeneratedCode {
+  id               Int      @id @default(autoincrement())
+  queryId          Int
+  llmName          String // 'gpt-4', 'claude', 'gemini', 'mistral'
+  codeContent      String
+  generatedAt      DateTime @default(now())
+  generationTimeMs Int? // tiempo que tardó el LLM en responder
+
+  // Relaciones
+  query            UserQuery         @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  metrics          CodeMetrics?
+  testExecutions   TestExecution[]
+  securityFindings SecurityFinding[]
+
+  @@map("generated_codes")
+}
+
+// MODELO 3: Métricas cuantitativas (las 14 métricas)
+model CodeMetrics {
+  id     Int @id @default(autoincrement())
+  codeId Int @unique
+
+  // CORRECCIÓN (3 métricas)
+  passRate           Float? @default(0)
+  errorHandlingScore Float? @default(0)
+  runtimeErrorRate   Float? @default(0)
+
+  // EFICIENCIA (3 métricas)
+  avgExecutionTime      Float? // milisegundos
+  memoryUsage           Float? // MB
+  algorithmicComplexity Int?   @default(1)
+
+  // MANTENIBILIDAD (4 métricas)
+  cyclomaticComplexity Int?   @default(1)
+  linesOfCode          Int?   @default(0)
+  nestingDepth         Int?   @default(1)
+  cohesionScore        Float? @default(100)
+
+  // SEGURIDAD (4 métricas)
+  xssVulnerabilities       Int? @default(0)
+  injectionVulnerabilities Int? @default(0)
+  hardcodedSecrets         Int? @default(0)
+  unsafeOperations         Int? @default(0)
+
+  // PUNTUACIONES FINALES
+  totalScore Float?   @default(0)
+  analyzedAt DateTime @default(now())
+
+  // Relaciones
+  code GeneratedCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+
+  @@map("code_metrics")
+}
+
+// MODELO 4: Casos de prueba ejecutados
+model TestExecution {
+  id              Int      @id @default(autoincrement())
+  codeId          Int
+  testCaseNumber  Int
+  testInput       Json // inputs del test en formato JSON
+  expectedOutput  String?
+  actualOutput    String?
+  passed          Boolean  @default(false)
+  executionTimeMs Float?
+  errorMessage    String?
+  executedAt      DateTime @default(now())
+
+  // Relaciones
+  code GeneratedCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+
+  @@map("test_executions")
+}
+
+// MODELO 5: Vulnerabilidades detectadas
+model SecurityFinding {
+  id                Int      @id @default(autoincrement())
+  codeId            Int
+  vulnerabilityType String // 'xss', 'injection', 'secrets', 'unsafe'
+  severity          String // 'low', 'medium', 'high', 'critical'
+  lineNumber        Int?
+  patternMatched    String?
+  description       String?
+  detectedAt        DateTime @default(now())
+
+  // Relaciones
+  code GeneratedCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+
+  @@map("security_findings")
+}

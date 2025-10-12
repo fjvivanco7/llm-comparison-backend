@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { LlmModule } from './llm/llm.module';
 import { QueriesModule } from './queries/queries.module';
+import { AnalysisModule } from './analysis/analysis.module';
 
 @Module({
   imports: [
@@ -12,7 +13,8 @@ import { QueriesModule } from './queries/queries.module';
     }),
     PrismaModule,
     LlmModule,
-    QueriesModule
+    QueriesModule,
+    AnalysisModule
   ],
   controllers: [],
   providers: [],

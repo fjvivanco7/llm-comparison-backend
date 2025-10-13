@@ -68,16 +68,24 @@ export class MetricsService {
    */
   private calculateCohesion(code: string): number {
     // Detectar múltiples responsabilidades
-    const responsibilities = [
-      /save.*database|insert.*db|update.*db/gi.test(code),
-      /send.*email|notify|alert/gi.test(code),
-      /validate.*input|check.*valid/gi.test(code),
-      /calculate|compute|process/gi.test(code),
-      /format.*output|render|display/gi.test(code),
-    ].filter(Boolean).length;
+    const patterns = [
+      /save.*database|insert.*db|update.*db/gi,
+      /send.*email|notify|alert/gi,
+      /validate.*input|check.*valid/gi,
+      /calculate|compute|process/gi,
+      /format.*output|render|display/gi,
+    ];
+
+    const responsibilities = patterns.filter(pattern => pattern.test(code)).length;
+
+    // Si no detecta ninguna responsabilidad clara, asumir 1 (código simple)
+    const finalResponsibilities = responsibilities === 0 ? 1 : responsibilities;
 
     // Score: 100 si 1 responsabilidad, decrece con más
-    return Math.max(0, 100 - (responsibilities - 1) * 20);
+    const score = 100 - (finalResponsibilities - 1) * 20;
+
+    // Asegurar que esté entre 0-100
+    return Math.max(0, Math.min(100, score));
   }
 
   /**

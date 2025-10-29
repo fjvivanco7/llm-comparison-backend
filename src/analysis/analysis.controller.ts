@@ -24,7 +24,8 @@ export class AnalysisController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Analizar código específico',
-    description: 'Ejecuta análisis completo de un código: métricas, seguridad y ejecución',
+    description:
+      'Ejecuta análisis completo de un código: métricas, seguridad y ejecución',
   })
   @ApiParam({ name: 'codeId', description: 'ID del código generado' })
   @ApiResponse({
@@ -49,7 +50,8 @@ export class AnalysisController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Analizar todos los códigos de una consulta',
-    description: 'Analiza todos los códigos generados para una consulta específica',
+    description:
+      'Analiza todos los códigos generados para una consulta específica',
   })
   @ApiParam({ name: 'queryId', description: 'ID de la consulta' })
   @ApiResponse({
@@ -108,7 +110,8 @@ export class AnalysisController {
               name: 'passRate',
               unit: '%',
               range: '0-100',
-              description: 'Porcentaje de casos de prueba que el código pasa exitosamente',
+              description:
+                'Porcentaje de casos de prueba que el código pasa exitosamente',
               interpretation: {
                 excellent: '90-100%',
                 good: '70-89%',
@@ -120,7 +123,8 @@ export class AnalysisController {
               name: 'errorHandlingScore',
               unit: 'pts',
               range: '0-100',
-              description: 'Calidad del manejo de errores (try-catch, validaciones)',
+              description:
+                'Calidad del manejo de errores (try-catch, validaciones)',
               interpretation: {
                 excellent: '80-100 pts',
                 good: '60-79 pts',
@@ -163,7 +167,8 @@ export class AnalysisController {
               name: 'memoryUsage',
               unit: 'MB',
               range: '0-∞',
-              description: 'Memoria utilizada en megabytes (nota: mide proceso completo)',
+              description:
+                'Memoria utilizada en megabytes (nota: mide proceso completo)',
               interpretation: {
                 note: 'Actualmente mide memoria del proceso Node.js completo, no solo de la función',
               },
@@ -190,7 +195,8 @@ export class AnalysisController {
               name: 'cyclomaticComplexity',
               unit: 'número',
               range: '1-∞',
-              description: 'Complejidad de McCabe - número de caminos independientes',
+              description:
+                'Complejidad de McCabe - número de caminos independientes',
               interpretation: {
                 excellent: '1-5',
                 good: '6-10',
@@ -202,7 +208,8 @@ export class AnalysisController {
               name: 'linesOfCode',
               unit: 'líneas',
               range: '1-∞',
-              description: 'Cantidad de líneas de código (sin comentarios ni vacías)',
+              description:
+                'Cantidad de líneas de código (sin comentarios ni vacías)',
               interpretation: {
                 note: 'Menos líneas = más conciso (generalmente mejor)',
               },
@@ -211,7 +218,8 @@ export class AnalysisController {
               name: 'nestingDepth',
               unit: 'nivel',
               range: '1-∞',
-              description: 'Profundidad máxima de anidamiento (bloques dentro de bloques)',
+              description:
+                'Profundidad máxima de anidamiento (bloques dentro de bloques)',
               interpretation: {
                 excellent: '1-2',
                 good: '3',
@@ -223,7 +231,8 @@ export class AnalysisController {
               name: 'cohesionScore',
               unit: 'pts',
               range: '0-100',
-              description: 'Responsabilidad única - penaliza código que hace muchas cosas',
+              description:
+                'Responsabilidad única - penaliza código que hace muchas cosas',
               interpretation: {
                 excellent: '100 pts (1 responsabilidad)',
                 good: '80 pts (2 responsabilidades)',
@@ -242,7 +251,8 @@ export class AnalysisController {
               name: 'xssVulnerabilities',
               unit: 'cantidad',
               range: '0-∞',
-              description: 'Número de vulnerabilidades XSS detectadas (innerHTML, document.write)',
+              description:
+                'Número de vulnerabilidades XSS detectadas (innerHTML, document.write)',
               interpretation: {
                 excellent: '0',
                 poor: '>0',
@@ -252,7 +262,8 @@ export class AnalysisController {
               name: 'injectionVulnerabilities',
               unit: 'cantidad',
               range: '0-∞',
-              description: 'Code injection detectado (eval, Function constructor)',
+              description:
+                'Code injection detectado (eval, Function constructor)',
               interpretation: {
                 excellent: '0',
                 poor: '>0',
@@ -272,7 +283,8 @@ export class AnalysisController {
               name: 'unsafeOperations',
               unit: 'cantidad',
               range: '0-∞',
-              description: 'Operaciones peligrosas (child_process, fs sin validación)',
+              description:
+                'Operaciones peligrosas (child_process, fs sin validación)',
               interpretation: {
                 excellent: '0',
                 poor: '>0',
@@ -283,7 +295,8 @@ export class AnalysisController {
       ],
       scoring: {
         totalScore: {
-          formula: 'correction×0.4 + efficiency×0.25 + maintainability×0.2 + security×0.15',
+          formula:
+            'correction×0.4 + efficiency×0.25 + maintainability×0.2 + security×0.15',
           unit: 'pts',
           range: '0-100',
           interpretation: {

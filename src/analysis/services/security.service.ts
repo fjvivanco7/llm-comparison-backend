@@ -61,12 +61,14 @@ export class SecurityService {
       // Análisis con ESLint (con manejo de errores específico)
       try {
         const eslintResults = await this.eslint.lintText(code, {
-          filePath: 'temp-code.js',  // Nombre ficticio para evitar error de placeholder
+          filePath: 'temp-code.js', // Nombre ficticio para evitar error de placeholder
         });
         eslintIssues = this.parseESLintResults(eslintResults);
       } catch (eslintError) {
         // Si ESLint falla, solo logear pero continuar
-        this.logger.warn(`ESLint falló, continuando con análisis regex: ${eslintError.message}`);
+        this.logger.warn(
+          `ESLint falló, continuando con análisis regex: ${eslintError.message}`,
+        );
       }
 
       // Análisis con regex patterns (siempre funciona)
@@ -78,16 +80,18 @@ export class SecurityService {
 
       // Contar por tipo
       const counts = {
-        xss: allIssues.filter(i => i.type === 'xss').length,
-        injection: allIssues.filter(i => i.type === 'injection').length,
-        secrets: allIssues.filter(i => i.type === 'secrets').length,
-        unsafe: allIssues.filter(i => i.type === 'unsafe').length,
+        xss: allIssues.filter((i) => i.type === 'xss').length,
+        injection: allIssues.filter((i) => i.type === 'injection').length,
+        secrets: allIssues.filter((i) => i.type === 'secrets').length,
+        unsafe: allIssues.filter((i) => i.type === 'unsafe').length,
       };
 
       // Calcular score de seguridad
       const securityScore = this.calculateSecurityScore(counts);
 
-      this.logger.log(`Análisis completado: ${allIssues.length} issues encontrados`);
+      this.logger.log(
+        `Análisis completado: ${allIssues.length} issues encontrados`,
+      );
 
       return {
         xssVulnerabilities: counts.xss,
@@ -97,7 +101,6 @@ export class SecurityService {
         issues: allIssues,
         securityScore,
       };
-
     } catch (error) {
       this.logger.error(`Error en análisis de seguridad: ${error.message}`);
 
@@ -135,15 +138,27 @@ export class SecurityService {
 
     // Patrones de XSS
     const xssPatterns = [
-      { pattern: /innerHTML\s*=.*[\+\$\{]/gi, message: 'Posible XSS via innerHTML' },
-      { pattern: /document\.write\s*\(/gi, message: 'Uso inseguro de document.write' },
+      {
+        pattern: /innerHTML\s*=.*[\+\$\{]/gi,
+        message: 'Posible XSS via innerHTML',
+      },
+      {
+        pattern: /document\.write\s*\(/gi,
+        message: 'Uso inseguro de document.write',
+      },
       { pattern: /\.html\s*\(.*[\+\$\{]/gi, message: 'Posible XSS en .html()' },
-      { pattern: /dangerouslySetInnerHTML/gi, message: 'Uso de dangerouslySetInnerHTML' },
+      {
+        pattern: /dangerouslySetInnerHTML/gi,
+        message: 'Uso de dangerouslySetInnerHTML',
+      },
     ];
 
     // Patrones de Injection
     const injectionPatterns = [
-      { pattern: /eval\s*\(/gi, message: 'Uso de eval() - riesgo de code injection' },
+      {
+        pattern: /eval\s*\(/gi,
+        message: 'Uso de eval() - riesgo de code injection',
+      },
       { pattern: /Function\s*\(/gi, message: 'Uso de Function constructor' },
       { pattern: /setTimeout\s*\(.*[`'"]/gi, message: 'setTimeout con string' },
       { pattern: /new\s+Function/gi, message: 'new Function() detectado' },
@@ -159,9 +174,15 @@ export class SecurityService {
 
     // Patrones de operaciones inseguras
     const unsafePatterns = [
-      { pattern: /child_process\.exec/gi, message: 'Ejecución de comandos del sistema' },
+      {
+        pattern: /child_process\.exec/gi,
+        message: 'Ejecución de comandos del sistema',
+      },
       { pattern: /fs\.\w+Sync/gi, message: 'Operación de archivo síncrona' },
-      { pattern: /require\s*\(.*user/gi, message: 'Require dinámico con input de usuario' },
+      {
+        pattern: /require\s*\(.*user/gi,
+        message: 'Require dinámico con input de usuario',
+      },
     ];
 
     // Analizar cada categoría
@@ -171,10 +192,10 @@ export class SecurityService {
     this.scanPatterns(code, unsafePatterns, 'unsafe', issues);
 
     const counts = {
-      xss: issues.filter(i => i.type === 'xss').length,
-      injection: issues.filter(i => i.type === 'injection').length,
-      secrets: issues.filter(i => i.type === 'secrets').length,
-      unsafe: issues.filter(i => i.type === 'unsafe').length,
+      xss: issues.filter((i) => i.type === 'xss').length,
+      injection: issues.filter((i) => i.type === 'injection').length,
+      secrets: issues.filter((i) => i.type === 'secrets').length,
+      unsafe: issues.filter((i) => i.type === 'unsafe').length,
     };
 
     return {
@@ -219,11 +240,12 @@ export class SecurityService {
     unsafe: number;
   }): number {
     // Ponderación por severidad
-    const score = 100
-      - (counts.injection * 25)  // Critical
-      - (counts.xss * 20)        // High
-      - (counts.secrets * 15)    // High
-      - (counts.unsafe * 10);    // Medium
+    const score =
+      100 -
+      counts.injection * 25 - // Critical
+      counts.xss * 20 - // High
+      counts.secrets * 15 - // High
+      counts.unsafe * 10; // Medium
 
     return Math.max(0, Math.min(100, score));
   }
@@ -233,8 +255,10 @@ export class SecurityService {
    */
   private categorizeESLintRule(ruleId: string): SecurityIssue['type'] {
     if (ruleId.includes('xss') || ruleId.includes('html')) return 'xss';
-    if (ruleId.includes('eval') || ruleId.includes('injection')) return 'injection';
-    if (ruleId.includes('secret') || ruleId.includes('password')) return 'secrets';
+    if (ruleId.includes('eval') || ruleId.includes('injection'))
+      return 'injection';
+    if (ruleId.includes('secret') || ruleId.includes('password'))
+      return 'secrets';
     return 'unsafe';
   }
 
@@ -250,7 +274,9 @@ export class SecurityService {
   /**
    * Obtiene severidad por tipo de vulnerabilidad
    */
-  private getSeverityByType(type: SecurityIssue['type']): SecurityIssue['severity'] {
+  private getSeverityByType(
+    type: SecurityIssue['type'],
+  ): SecurityIssue['severity'] {
     const severityMap = {
       injection: 'critical' as const,
       xss: 'high' as const,

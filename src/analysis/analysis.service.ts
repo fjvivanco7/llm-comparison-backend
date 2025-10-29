@@ -81,21 +81,24 @@ export class AnalysisService {
 
       // 3. Análisis de seguridad
       this.logger.log('Analizando vulnerabilidades de seguridad...');
-      const securityAnalysis = await this.securityService.analyzeSecurityIssues(code);
+      const securityAnalysis =
+        await this.securityService.analyzeSecurityIssues(code);
 
       // 4. Análisis de ejecución (si hay casos de prueba)
       this.logger.log('Ejecutando casos de prueba...');
-      const executionAnalysis = testCases && testCases.length > 0
-        ? await this.executionService.executeWithTests(code, testCases)
-        : await this.executionService.executeWithTests(
-          code,
-          this.executionService.generateBasicTestCases(code)
-        );
+      const executionAnalysis =
+        testCases && testCases.length > 0
+          ? await this.executionService.executeWithTests(code, testCases)
+          : await this.executionService.executeWithTests(
+              code,
+              this.executionService.generateBasicTestCases(code),
+            );
 
       // 5. Calcular scores por categoría
       const correctionScore = this.calculateCorrectionScore(executionAnalysis);
       const efficiencyScore = this.calculateEfficiencyScore(executionAnalysis);
-      const maintainabilityScore = this.calculateMaintainabilityScore(metricsAnalysis);
+      const maintainabilityScore =
+        this.calculateMaintainabilityScore(metricsAnalysis);
       const securityScore = securityAnalysis.securityScore;
 
       // 6. Calcular score total (ponderado)
@@ -124,7 +127,9 @@ export class AnalysisService {
       // 9. Guardar vulnerabilidades encontradas
       await this.saveSecurityFindings(codeId, securityAnalysis.issues);
 
-      this.logger.log(`Análisis completado. Score total: ${totalScore.toFixed(2)}`);
+      this.logger.log(
+        `Análisis completado. Score total: ${totalScore.toFixed(2)}`,
+      );
 
       // 10. Retornar análisis completo
       return {
@@ -158,7 +163,6 @@ export class AnalysisService {
         totalScore,
         analyzedAt: new Date(),
       };
-
     } catch (error) {
       this.logger.error(`Error analizando código: ${error.message}`);
       throw error;
@@ -177,12 +181,14 @@ export class AnalysisService {
     });
 
     if (codes.length === 0) {
-      throw new NotFoundException(`No se encontraron códigos para la consulta ${queryId}`);
+      throw new NotFoundException(
+        `No se encontraron códigos para la consulta ${queryId}`,
+      );
     }
 
     // Analizar cada código en paralelo
     const analyses = await Promise.all(
-      codes.map(code => this.analyzeCode(code.id))
+      codes.map((code) => this.analyzeCode(code.id)),
     );
 
     this.logger.log(`${analyses.length} códigos analizados exitosamente`);
@@ -206,7 +212,9 @@ export class AnalysisService {
     });
 
     if (!metrics) {
-      throw new NotFoundException(`Métricas no encontradas para código ${codeId}`);
+      throw new NotFoundException(
+        `Métricas no encontradas para código ${codeId}`,
+      );
     }
 
     // Transformar a formato categorizado
@@ -268,10 +276,14 @@ export class AnalysisService {
     const memoryScore = Math.max(0, 100 - execution.memoryUsage * 5);
 
     // Complejidad (menos es mejor)
-    const complexityScore = execution.algorithmicComplexity === 1 ? 100 :
-      execution.algorithmicComplexity === 2 ? 80 : 60;
+    const complexityScore =
+      execution.algorithmicComplexity === 1
+        ? 100
+        : execution.algorithmicComplexity === 2
+          ? 80
+          : 60;
 
-    return (timeScore * 0.4 + memoryScore * 0.3 + complexityScore * 0.3);
+    return timeScore * 0.4 + memoryScore * 0.3 + complexityScore * 0.3;
   }
 
   /**
@@ -279,12 +291,20 @@ export class AnalysisService {
    */
   private calculateMaintainabilityScore(metrics: any): number {
     // Complejidad ciclomática (menos es mejor)
-    const complexityScore = Math.max(0, 100 - (metrics.cyclomaticComplexity - 1) * 10);
+    const complexityScore = Math.max(
+      0,
+      100 - (metrics.cyclomaticComplexity - 1) * 10,
+    );
 
     // Líneas de código (menos es mejor, pero penalizar demasiado poco)
-    const locScore = metrics.linesOfCode < 10 ? 100 :
-      metrics.linesOfCode < 20 ? 90 :
-        metrics.linesOfCode < 50 ? 80 : 70;
+    const locScore =
+      metrics.linesOfCode < 10
+        ? 100
+        : metrics.linesOfCode < 20
+          ? 90
+          : metrics.linesOfCode < 50
+            ? 80
+            : 70;
 
     // Profundidad de anidamiento (menos es mejor)
     const nestingScore = Math.max(0, 100 - (metrics.nestingDepth - 1) * 20);
@@ -310,9 +330,9 @@ export class AnalysisService {
     securityScore: number;
   }): number {
     return (
-      scores.correctionScore * 0.40 +
+      scores.correctionScore * 0.4 +
       scores.efficiencyScore * 0.25 +
-      scores.maintainabilityScore * 0.20 +
+      scores.maintainabilityScore * 0.2 +
       scores.securityScore * 0.15
     );
   }
@@ -398,7 +418,7 @@ export class AnalysisService {
     // Guardar nuevos findings
     if (issues.length > 0) {
       await this.prisma.securityFinding.createMany({
-        data: issues.map(issue => ({
+        data: issues.map((issue) => ({
           codeId,
           vulnerabilityType: issue.type,
           severity: issue.severity,

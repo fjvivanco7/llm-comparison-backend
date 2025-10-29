@@ -8,7 +8,10 @@ export class OllamaProvider implements ILlmProvider {
   private readonly baseUrl: string;
 
   constructor(private configService: ConfigService) {
-    this.baseUrl = this.configService.get<string>('OLLAMA_BASE_URL', 'http://localhost:11434');
+    this.baseUrl = this.configService.get<string>(
+      'OLLAMA_BASE_URL',
+      'http://localhost:11434',
+    );
   }
 
   /**
@@ -39,7 +42,6 @@ export class OllamaProvider implements ILlmProvider {
 
       this.logger.log(`Código generado exitosamente con ${model}`);
       return this.cleanCode(generatedCode);
-
     } catch (error) {
       this.logger.error(`Error generando código con ${model}:`, error.message);
       throw new Error(`Failed to generate code with Ollama: ${error.message}`);
@@ -72,7 +74,6 @@ export class OllamaProvider implements ILlmProvider {
 
       const data = await response.json();
       return data.models.map((model: any) => model.name);
-
     } catch (error) {
       this.logger.error('Error obteniendo modelos:', error.message);
       return [];

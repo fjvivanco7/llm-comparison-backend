@@ -43,7 +43,9 @@ export class ExecutionService {
     code: string,
     testCases: TestCase[],
   ): Promise<ExecutionAnalysis> {
-    this.logger.log(`Ejecutando código con ${testCases.length} casos de prueba`);
+    this.logger.log(
+      `Ejecutando código con ${testCases.length} casos de prueba`,
+    );
 
     const testResults: TestResult[] = [];
     const executionTimes: number[] = [];
@@ -58,7 +60,6 @@ export class ExecutionService {
 
         if (result.passed) passedTests++;
         executionTimes.push(result.executionTime);
-
       } catch (error) {
         runtimeErrors++;
         testResults.push({
@@ -74,9 +75,10 @@ export class ExecutionService {
 
     // Calcular métricas
     const passRate = (passedTests / testCases.length) * 100;
-    const avgExecutionTime = executionTimes.length > 0
-      ? executionTimes.reduce((a, b) => a + b, 0) / executionTimes.length
-      : 0;
+    const avgExecutionTime =
+      executionTimes.length > 0
+        ? executionTimes.reduce((a, b) => a + b, 0) / executionTimes.length
+        : 0;
     const runtimeErrorRate = (runtimeErrors / testCases.length) * 100;
 
     // Estimar complejidad algorítmica basado en tiempo de ejecución
@@ -86,7 +88,7 @@ export class ExecutionService {
     const memoryUsage = this.measureMemory();
 
     this.logger.log(
-      `Ejecución completada: ${passedTests}/${testCases.length} tests pasados`
+      `Ejecución completada: ${passedTests}/${testCases.length} tests pasados`,
     );
 
     return {
@@ -139,7 +141,6 @@ export class ExecutionService {
         actualOutput,
         executionTime,
       };
-
     } catch (error) {
       const executionTime = performance.now() - startTime;
 
@@ -174,7 +175,9 @@ export class ExecutionService {
     // Comparación profunda para objetos y arrays
     if (Array.isArray(actual) && Array.isArray(expected)) {
       if (actual.length !== expected.length) return false;
-      return actual.every((val, idx) => this.compareOutputs(val, expected[idx]));
+      return actual.every((val, idx) =>
+        this.compareOutputs(val, expected[idx]),
+      );
     }
 
     if (typeof actual === 'object' && typeof expected === 'object') {
@@ -183,8 +186,8 @@ export class ExecutionService {
 
       if (actualKeys.length !== expectedKeys.length) return false;
 
-      return actualKeys.every(key =>
-        this.compareOutputs(actual[key], expected[key])
+      return actualKeys.every((key) =>
+        this.compareOutputs(actual[key], expected[key]),
       );
     }
 
@@ -238,7 +241,7 @@ export class ExecutionService {
    */
   private calculateVariance(numbers: number[]): number {
     const mean = numbers.reduce((a, b) => a + b, 0) / numbers.length;
-    const squaredDiffs = numbers.map(n => Math.pow(n - mean, 2));
+    const squaredDiffs = numbers.map((n) => Math.pow(n - mean, 2));
     return squaredDiffs.reduce((a, b) => a + b, 0) / numbers.length;
   }
 

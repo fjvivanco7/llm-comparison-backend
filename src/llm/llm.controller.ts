@@ -1,4 +1,11 @@
-import { Controller, Post, Get, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { LlmService } from './llm.service';
 import { GenerateCodeDto } from './dto/generate-code.dto';
@@ -17,16 +24,17 @@ export class LlmController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Generar código con un modelo LLM',
-    description: 'Genera código JavaScript basado en un prompt usando un modelo específico'
+    description:
+      'Genera código JavaScript basado en un prompt usando un modelo específico',
   })
   @ApiResponse({
     status: 200,
     description: 'Código generado exitosamente',
-    type: LlmResponseDto
+    type: LlmResponseDto,
   })
   @ApiResponse({
     status: 400,
-    description: 'Error en la solicitud o generación de código'
+    description: 'Error en la solicitud o generación de código',
   })
   async generateCode(@Body() dto: GenerateCodeDto): Promise<LlmResponseDto> {
     return await this.llmService.generateCode(dto);
@@ -39,14 +47,17 @@ export class LlmController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Generar código con múltiples modelos',
-    description: 'Genera código con varios modelos en paralelo para comparar resultados'
+    description:
+      'Genera código con varios modelos en paralelo para comparar resultados',
   })
   @ApiResponse({
     status: 200,
     description: 'Código generado con múltiples modelos',
-    type: [LlmResponseDto]
+    type: [LlmResponseDto],
   })
-  async generateMultiple(@Body() dto: GenerateMultipleDto): Promise<LlmResponseDto[]> {
+  async generateMultiple(
+    @Body() dto: GenerateMultipleDto,
+  ): Promise<LlmResponseDto[]> {
     return await this.llmService.generateMultipleCodes(dto);
   }
 
@@ -56,11 +67,11 @@ export class LlmController {
   @Get('health')
   @ApiOperation({
     summary: 'Verificar estado de los providers',
-    description: 'Verifica si Ollama y otros providers están disponibles'
+    description: 'Verifica si Ollama y otros providers están disponibles',
   })
   @ApiResponse({
     status: 200,
-    description: 'Estado de los providers'
+    description: 'Estado de los providers',
   })
   async healthCheck() {
     return await this.llmService.healthCheck();
@@ -72,11 +83,11 @@ export class LlmController {
   @Get('models')
   @ApiOperation({
     summary: 'Listar modelos disponibles',
-    description: 'Obtiene la lista de modelos disponibles en cada provider'
+    description: 'Obtiene la lista de modelos disponibles en cada provider',
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de modelos disponibles'
+    description: 'Lista de modelos disponibles',
   })
   async listModels() {
     return await this.llmService.listAvailableModels();

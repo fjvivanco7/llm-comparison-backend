@@ -25,7 +25,9 @@ export class MetricsService {
       // Analizar código con escomplex
       const analysis = escomplex.analyse(code);
 
-      this.logger.log(`Métricas calculadas: Complejidad=${analysis.aggregate.cyclomatic}`);
+      this.logger.log(
+        `Métricas calculadas: Complejidad=${analysis.aggregate.cyclomatic}`,
+      );
 
       return {
         cyclomaticComplexity: analysis.aggregate.cyclomatic,
@@ -35,7 +37,6 @@ export class MetricsService {
         numberOfFunctions: analysis.functions?.length || 0,
         maintainabilityIndex: analysis.maintainability || 0,
       };
-
     } catch (error) {
       this.logger.error(`Error analizando métricas: ${error.message}`);
 
@@ -76,7 +77,9 @@ export class MetricsService {
       /format.*output|render|display/gi,
     ];
 
-    const responsibilities = patterns.filter(pattern => pattern.test(code)).length;
+    const responsibilities = patterns.filter((pattern) =>
+      pattern.test(code),
+    ).length;
 
     // Si no detecta ninguna responsabilidad clara, asumir 1 (código simple)
     const finalResponsibilities = responsibilities === 0 ? 1 : responsibilities;
@@ -92,7 +95,7 @@ export class MetricsService {
    * Análisis básico si escomplex falla
    */
   private basicMetricsAnalysis(code: string): CodeMetrics {
-    const lines = code.split('\n').filter(l => l.trim().length > 0);
+    const lines = code.split('\n').filter((l) => l.trim().length > 0);
 
     const decisions = [
       ...code.matchAll(/\bif\b/g),

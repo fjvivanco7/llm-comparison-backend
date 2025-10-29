@@ -24,7 +24,9 @@ export class LlmService {
       const provider = this.getProvider(dto.provider || LlmProvider.OLLAMA); // ← Agregar valor por defecto
 
       // Determinar qué modelo usar
-      const model = dto.model || await this.getDefaultModel(dto.provider || LlmProvider.OLLAMA); // ← Agregar valor por defecto
+      const model =
+        dto.model ||
+        (await this.getDefaultModel(dto.provider || LlmProvider.OLLAMA)); // ← Agregar valor por defecto
 
       this.logger.log(`Generando código con ${dto.provider}/${model}`);
 
@@ -35,49 +37,53 @@ export class LlmService {
       const response: LlmResponseDto = {
         code,
         model,
-        provider: dto.provider || LlmProvider.OLLAMA,  // ← Agregar valor por defecto
+        provider: dto.provider || LlmProvider.OLLAMA, // ← Agregar valor por defecto
         generationTimeMs: Date.now() - startTime,
         generatedAt: new Date(),
       };
 
       return response;
-
     } catch (error) {
       this.logger.error(`Error generando código: ${error.message}`);
-      throw new BadRequestException(`Failed to generate code: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to generate code: ${error.message}`,
+      );
     }
   }
 
   /**
    * Genera código con múltiples modelos en paralelo
    */
-  async generateMultipleCodes(dto: GenerateMultipleDto): Promise<LlmResponseDto[]> {
+  async generateMultipleCodes(
+    dto: GenerateMultipleDto,
+  ): Promise<LlmResponseDto[]> {
     this.logger.log(`Generando código con ${dto.models.length} modelos`);
 
     try {
       // Generar con todos los modelos en paralelo
-      const promises = dto.models.map(model =>
+      const promises = dto.models.map((model) =>
         this.generateCode({
           prompt: dto.prompt,
           provider: dto.provider,
           model,
-        })
+        }),
       );
 
       const results = await Promise.allSettled(promises);
 
       // Filtrar resultados exitosos
       const successfulResults = results
-        .filter((result): result is PromiseFulfilledResult<LlmResponseDto> =>
-          result.status === 'fulfilled'
+        .filter(
+          (result): result is PromiseFulfilledResult<LlmResponseDto> =>
+            result.status === 'fulfilled',
         )
-        .map(result => result.value);
+        .map((result) => result.value);
 
       // Log de errores
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           this.logger.error(
-            `Error con modelo ${dto.models[index]}: ${result.reason}`
+            `Error con modelo ${dto.models[index]}: ${result.reason}`,
           );
         }
       });
@@ -86,9 +92,10 @@ export class LlmService {
         throw new Error('Todos los modelos fallaron al generar código');
       }
 
-      this.logger.log(`${successfulResults.length} de ${dto.models.length} modelos completados`);
+      this.logger.log(
+        `${successfulResults.length} de ${dto.models.length} modelos completados`,
+      );
       return successfulResults;
-
     } catch (error) {
       this.logger.error(`Error en generación múltiple: ${error.message}`);
       throw new BadRequestException(error.message);
@@ -135,7 +142,9 @@ export class LlmService {
     return {
       ollama: {
         status: ollamaHealth ? 'healthy' : 'unhealthy',
-        models: ollamaHealth ? await this.ollamaProvider.getAvailableModels() : [],
+        models: ollamaHealth
+          ? await this.ollamaProvider.getAvailableModels()
+          : [],
       },
       // openrouter: { ... } // Agregar después
     };

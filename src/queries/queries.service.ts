@@ -53,7 +53,7 @@ export class QueriesService {
               generatedAt: response.generatedAt,
             },
           });
-        })
+        }),
       );
 
       this.logger.log(`${savedCodes.length} códigos guardados en BD`);
@@ -66,7 +66,6 @@ export class QueriesService {
 
       // 5. Retornar la consulta completa con los códigos
       return await this.findOne(query.id);
-
     } catch (error) {
       this.logger.error(`Error creando consulta: ${error.message}`);
       throw error;
@@ -86,7 +85,7 @@ export class QueriesService {
       },
     });
 
-    return queries.map(query => this.mapToResponseDto(query));
+    return queries.map((query) => this.mapToResponseDto(query));
   }
 
   /**

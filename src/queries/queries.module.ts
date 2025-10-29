@@ -5,10 +5,7 @@ import { LlmModule } from '../llm/llm.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-  imports: [
-    PrismaModule,
-    LlmModule,
-  ],
+  imports: [PrismaModule, LlmModule],
   controllers: [QueriesController],
   providers: [QueriesService],
   exports: [QueriesService],

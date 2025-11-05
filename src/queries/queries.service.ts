@@ -17,13 +17,17 @@ export class QueriesService {
   /**
    * Crea una nueva consulta y genera código con múltiples modelos
    */
-  async createQuery(dto: CreateQueryDto): Promise<QueryResponseDto> {
-    this.logger.log(`Creando nueva consulta: "${dto.userPrompt}"`);
+  async createQuery(
+    dto: CreateQueryDto,
+    userId: number, // ← NUEVO parámetro
+  ): Promise<QueryResponseDto> {
+    this.logger.log(`Creando nueva consulta para usuario ${userId}: "${dto.userPrompt}"`);
 
     try {
-      // 1. Crear la consulta en la BD
+      // 1. Crear la consulta en la BD con userId
       const query = await this.prisma.userQuery.create({
         data: {
+          userId, // ← NUEVO campo
           userPrompt: dto.userPrompt,
           promptCategory: dto.promptCategory,
           status: 'processing',
@@ -65,7 +69,7 @@ export class QueriesService {
       });
 
       // 5. Retornar la consulta completa con los códigos
-      return await this.findOne(query.id);
+      return await this.findOne(query.id, userId);
     } catch (error) {
       this.logger.error(`Error creando consulta: ${error.message}`);
       throw error;
@@ -73,10 +77,11 @@ export class QueriesService {
   }
 
   /**
-   * Obtiene todas las consultas
+   * Obtiene todas las consultas del usuario
    */
-  async findAll(): Promise<QueryResponseDto[]> {
+  async findAll(userId: number): Promise<QueryResponseDto[]> {
     const queries = await this.prisma.userQuery.findMany({
+      where: { userId }, // ← Filtrar por usuario
       include: {
         generatedCodes: true,
       },
@@ -89,11 +94,14 @@ export class QueriesService {
   }
 
   /**
-   * Obtiene una consulta por ID
+   * Obtiene una consulta por ID (solo si pertenece al usuario)
    */
-  async findOne(id: number): Promise<QueryResponseDto> {
-    const query = await this.prisma.userQuery.findUnique({
-      where: { id },
+  async findOne(id: number, userId: number): Promise<QueryResponseDto> {
+    const query = await this.prisma.userQuery.findFirst({
+      where: {
+        id,
+        userId, // ← Verificar que pertenezca al usuario
+      },
       include: {
         generatedCodes: {
           orderBy: {
@@ -111,11 +119,14 @@ export class QueriesService {
   }
 
   /**
-   * Elimina una consulta
+   * Elimina una consulta (solo si pertenece al usuario)
    */
-  async remove(id: number): Promise<void> {
-    const query = await this.prisma.userQuery.findUnique({
-      where: { id },
+  async remove(id: number, userId: number): Promise<void> {
+    const query = await this.prisma.userQuery.findFirst({
+      where: {
+        id,
+        userId, // ← Verificar que pertenezca al usuario
+      },
     });
 
     if (!query) {

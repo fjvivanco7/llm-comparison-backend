@@ -14,13 +14,44 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// MODELO DE USUARIOS
+// ============================================
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String   // Hash de bcrypt
+  firstName String?
+  lastName  String?
+
+  isEmailVerified Boolean  @default(false)
+  emailVerificationToken String? @unique
+  emailVerificationExpires DateTime?
+
+  passwordResetToken String? @unique
+  passwordResetExpires DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+
+  // Relaciones
+  queries UserQuery[]
+
+  @@map("users")
+}
+
 // MODELO 1: Consultas/Prompts de usuarios
 model UserQuery {
   id             Int             @id @default(autoincrement())
+  userId         Int             // ← NUEVO: relación con usuario
   userPrompt     String
-  promptCategory String? // 'algorithms', 'web', 'utilities'
+  promptCategory String?
   createdAt      DateTime        @default(now())
-  status         String          @default("processing") // 'processing', 'completed', 'failed'
+  status         String          @default("processing")
+
+  // Relaciones
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   generatedCodes GeneratedCode[]
 
   @@map("user_queries")

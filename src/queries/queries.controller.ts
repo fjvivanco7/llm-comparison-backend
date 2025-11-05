@@ -8,14 +8,19 @@ import {
   HttpCode,
   HttpStatus,
   ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { QueriesService } from './queries.service';
 import { CreateQueryDto } from './dto/create-query.dto';
 import { QueryResponseDto } from './dto/query-response.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 @ApiTags('Queries')
 @Controller('queries')
+@UseGuards(JwtAuthGuard) // ← PROTEGER todas las rutas
+@ApiBearerAuth() // ← Requerir token en Swagger
 export class QueriesController {
   constructor(private readonly queriesService: QueriesService) {}
 
@@ -38,28 +43,37 @@ export class QueriesController {
     status: 400,
     description: 'Error en la solicitud',
   })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
   async create(
     @Body() createQueryDto: CreateQueryDto,
+    @CurrentUser() user: any, // ← Obtener usuario del token
   ): Promise<QueryResponseDto> {
-    return await this.queriesService.createQuery(createQueryDto);
+    return await this.queriesService.createQuery(createQueryDto, user.id);
   }
 
   /**
-   * Obtener todas las consultas
+   * Obtener todas las consultas del usuario autenticado
    */
   @Get()
   @ApiOperation({
-    summary: 'Listar todas las consultas',
+    summary: 'Listar mis consultas',
     description:
-      'Obtiene el historial completo de consultas con sus códigos generados',
+      'Obtiene el historial completo de consultas del usuario autenticado',
   })
   @ApiResponse({
     status: 200,
     description: 'Lista de consultas',
     type: [QueryResponseDto],
   })
-  async findAll(): Promise<QueryResponseDto[]> {
-    return await this.queriesService.findAll();
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
+  async findAll(@CurrentUser() user: any): Promise<QueryResponseDto[]> {
+    return await this.queriesService.findAll(user.id);
   }
 
   /**
@@ -67,9 +81,9 @@ export class QueriesController {
    */
   @Get(':id')
   @ApiOperation({
-    summary: 'Obtener consulta por ID',
+    summary: 'Obtener mi consulta por ID',
     description:
-      'Obtiene los detalles de una consulta específica con todos sus códigos',
+      'Obtiene los detalles de una consulta específica (solo si pertenece al usuario)',
   })
   @ApiParam({ name: 'id', description: 'ID de la consulta' })
   @ApiResponse({
@@ -81,10 +95,15 @@ export class QueriesController {
     status: 404,
     description: 'Consulta no encontrada',
   })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
   async findOne(
     @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: any,
   ): Promise<QueryResponseDto> {
-    return await this.queriesService.findOne(id);
+    return await this.queriesService.findOne(id, user.id);
   }
 
   /**
@@ -93,7 +112,7 @@ export class QueriesController {
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Eliminar consulta',
+    summary: 'Eliminar mi consulta',
     description: 'Elimina una consulta y todos sus códigos asociados',
   })
   @ApiParam({ name: 'id', description: 'ID de la consulta' })
@@ -105,7 +124,14 @@ export class QueriesController {
     status: 404,
     description: 'Consulta no encontrada',
   })
-  async remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    return await this.queriesService.remove(id);
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: any,
+  ): Promise<void> {
+    return await this.queriesService.remove(id, user.id);
   }
 }

@@ -1,14 +1,15 @@
-// src/comparison/comparison.controller.ts
-
-import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { Controller, Get, Param, ParseIntPipe, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { ComparisonService } from './comparison.service';
 import { QueryComparisonDto } from './dto/comparison-result.dto';
 import { GlobalRankingDto } from './dto/ranking.dto';
 import { ComparisonStatsDto } from './dto/stats.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Comparison')
 @Controller('comparison')
+@UseGuards(JwtAuthGuard) // ← PROTEGER todas las rutas
+@ApiBearerAuth() // ← Requerir token en Swagger
 export class ComparisonController {
   constructor(private readonly comparisonService: ComparisonService) {}
 
@@ -31,6 +32,10 @@ export class ComparisonController {
     status: 404,
     description: 'Consulta no encontrada o sin códigos analizados',
   })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
   async compareQuery(
     @Param('queryId', ParseIntPipe) queryId: number,
   ): Promise<QueryComparisonDto> {
@@ -50,6 +55,10 @@ export class ComparisonController {
     status: 200,
     description: 'Ganador identificado',
   })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
   async getWinner(@Param('queryId', ParseIntPipe) queryId: number) {
     return await this.comparisonService.getWinner(queryId);
   }
@@ -68,6 +77,10 @@ export class ComparisonController {
     description: 'Ranking generado',
     type: GlobalRankingDto,
   })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
   async getGlobalRanking(): Promise<GlobalRankingDto> {
     return await this.comparisonService.getGlobalRanking();
   }
@@ -85,6 +98,10 @@ export class ComparisonController {
     status: 200,
     description: 'Estadísticas generadas',
     type: ComparisonStatsDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
   })
   async getStats(): Promise<ComparisonStatsDto> {
     return await this.comparisonService.getStats();

@@ -7,13 +7,17 @@ import {
   Body,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { AnalysisService, CompleteAnalysis } from './analysis.service';
 import { TestCase } from './services/execution.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Analysis')
 @Controller('analysis')
+@UseGuards(JwtAuthGuard) // ← PROTEGER todas las rutas
+@ApiBearerAuth() // ← Requerir token en Swagger
 export class AnalysisController {
   constructor(private readonly analysisService: AnalysisService) {}
 
@@ -35,6 +39,10 @@ export class AnalysisController {
   @ApiResponse({
     status: 404,
     description: 'Código no encontrado',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
   })
   async analyzeCode(
     @Param('codeId', ParseIntPipe) codeId: number,
@@ -59,6 +67,10 @@ export class AnalysisController {
     description: 'Todos los códigos analizados',
     type: [Object],
   })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
   async analyzeQuery(
     @Param('queryId', ParseIntPipe) queryId: number,
   ): Promise<CompleteAnalysis[]> {
@@ -81,6 +93,10 @@ export class AnalysisController {
   @ApiResponse({
     status: 404,
     description: 'Métricas no encontradas',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
   })
   async getMetrics(@Param('codeId', ParseIntPipe) codeId: number) {
     return await this.analysisService.getMetrics(codeId);

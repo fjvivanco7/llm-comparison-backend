@@ -28,7 +28,7 @@ export class EmailService {
     firstName?: string,
   ) {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL');
-    const verificationUrl = `${frontendUrl}?token=${token}`;
+    const verificationUrl = `${frontendUrl}/verify-email?token=${token}`;
 
     const htmlContent = `
       <!DOCTYPE html>

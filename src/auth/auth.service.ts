@@ -75,8 +75,19 @@ export class AuthService {
       // No fallar el registro si el email falla
     }
 
-    // Generar token JWT
-    return this.generateAuthResponse(user);
+    // Respuesta de registro
+    return {
+      accessToken: '',
+      tokenType: 'Bearer',
+      expiresIn: 0,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName || undefined,
+        lastName: user.lastName || undefined,
+        isEmailVerified: user.isEmailVerified,
+      },
+    };
   }
 
   /**
@@ -99,6 +110,12 @@ export class AuthService {
 
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    if (!user.isEmailVerified) {
+      throw new UnauthorizedException(
+        'Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.',
+      );
     }
 
     // Actualizar último login

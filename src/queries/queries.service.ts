@@ -104,6 +104,9 @@ export class QueriesService {
       },
       include: {
         generatedCodes: {
+          include: {
+            metrics: true, // ← AGREGAR ESTO
+          },
           orderBy: {
             generatedAt: 'asc',
           },
@@ -156,6 +159,27 @@ export class QueriesService {
         codeContent: code.codeContent,
         generationTimeMs: code.generationTimeMs,
         generatedAt: code.generatedAt,
+        metrics: code.metrics ? {
+          id: code.metrics.id,
+          codeId: code.metrics.codeId,
+          passRate: code.metrics.passRate,
+          errorHandlingScore: code.metrics.errorHandlingScore,
+          runtimeErrorRate: code.metrics.runtimeErrorRate,
+          avgExecutionTime: code.metrics.avgExecutionTime,
+          memoryUsage: code.metrics.memoryUsage,
+          algorithmicComplexity: code.metrics.algorithmicComplexity,
+          cyclomaticComplexity: code.metrics.cyclomaticComplexity,
+          linesOfCode: code.metrics.linesOfCode,
+          nestingDepth: code.metrics.nestingDepth,
+          cohesionScore: code.metrics.cohesionScore,
+          xssVulnerabilities: code.metrics.xssVulnerabilities,
+          injectionVulnerabilities: code.metrics.injectionVulnerabilities,
+          hardcodedSecrets: code.metrics.hardcodedSecrets,
+          unsafeOperations: code.metrics.unsafeOperations,
+          totalScore: code.metrics.totalScore,
+          analyzedAt: code.metrics.analyzedAt,
+        } : undefined,
+
       })),
     };
   }

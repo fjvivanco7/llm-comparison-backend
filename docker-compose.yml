@@ -1,0 +1,46 @@
+version: '3.8'
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/llm_comparison?schema=public
+      - OLLAMA_API_URL=http://ollama:11434/api
+    depends_on:
+      - db
+      - ollama
+    networks:
+      - app-network
+
+  db:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=llm_comparison
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+  ollama_data:
+
+networks:
+  app-network:
+    driver: bridge

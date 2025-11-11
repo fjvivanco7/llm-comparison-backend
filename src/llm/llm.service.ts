@@ -1,5 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { OllamaProvider } from './providers/ollama.provider';
+import { OpenRouterProvider } from './providers/openrouter.provider'; // ← NUEVO
 import { GenerateCodeDto, LlmProvider } from './dto/generate-code.dto';
 import { LlmResponseDto } from './dto/llm-response.dto';
 import { GenerateMultipleDto } from './dto/generate-multiple.dto';
@@ -10,7 +11,7 @@ export class LlmService {
 
   constructor(
     private readonly ollamaProvider: OllamaProvider,
-    // Aquí agregaremos openRouterProvider después
+    private readonly openRouterProvider: OpenRouterProvider, // ← NUEVO
   ) {}
 
   /**
@@ -21,12 +22,10 @@ export class LlmService {
 
     try {
       // Obtener el provider correcto
-      const provider = this.getProvider(dto.provider || LlmProvider.OLLAMA); // ← Agregar valor por defecto
+      const provider = this.getProvider(dto.provider || LlmProvider.OLLAMA);
 
       // Determinar qué modelo usar
-      const model =
-        dto.model ||
-        (await this.getDefaultModel(dto.provider || LlmProvider.OLLAMA)); // ← Agregar valor por defecto
+      const model = dto.model || (await this.getDefaultModel(dto.provider || LlmProvider.OLLAMA));
 
       this.logger.log(`Generando código con ${dto.provider}/${model}`);
 
@@ -37,7 +36,7 @@ export class LlmService {
       const response: LlmResponseDto = {
         code,
         model,
-        provider: dto.provider || LlmProvider.OLLAMA, // ← Agregar valor por defecto
+        provider: dto.provider || LlmProvider.OLLAMA,
         generationTimeMs: Date.now() - startTime,
         generatedAt: new Date(),
       };
@@ -110,8 +109,8 @@ export class LlmService {
       case LlmProvider.OLLAMA:
         return this.ollamaProvider;
 
-      // case LlmProvider.OPENROUTER:
-      //   return this.openRouterProvider;
+      case LlmProvider.OPENROUTER: // ← NUEVO
+        return this.openRouterProvider;
 
       default:
         throw new BadRequestException(`Provider ${providerType} no soportado`);
@@ -138,6 +137,7 @@ export class LlmService {
    */
   async healthCheck() {
     const ollamaHealth = await this.ollamaProvider.healthCheck();
+    const openRouterHealth = await this.openRouterProvider.healthCheck(); // ← NUEVO
 
     return {
       ollama: {
@@ -146,7 +146,12 @@ export class LlmService {
           ? await this.ollamaProvider.getAvailableModels()
           : [],
       },
-      // openrouter: { ... } // Agregar después
+      openrouter: { // ← NUEVO
+        status: openRouterHealth ? 'healthy' : 'unhealthy',
+        models: openRouterHealth
+          ? await this.openRouterProvider.getAvailableModels()
+          : [],
+      },
     };
   }
 
@@ -155,10 +160,11 @@ export class LlmService {
    */
   async listAvailableModels() {
     const ollamaModels = await this.ollamaProvider.getAvailableModels();
+    const openRouterModels = await this.openRouterProvider.getAvailableModels(); // ← NUEVO
 
     return {
       ollama: ollamaModels,
-      // openrouter: [...], // Agregar después
+      openrouter: openRouterModels, // ← NUEVO
     };
   }
 }

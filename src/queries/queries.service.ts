@@ -39,7 +39,7 @@ export class QueriesService {
       // 2. Generar código con múltiples modelos en paralelo
       const llmResponses = await this.llmService.generateMultipleCodes({
         prompt: dto.userPrompt,
-        provider: LlmProvider.OLLAMA,
+        provider: LlmProvider.OPENROUTER,
         models: dto.models,
       });
 

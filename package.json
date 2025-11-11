@@ -28,6 +28,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/swagger": "^11.2.1",
     "@nestjs/throttler": "^6.4.0",
+    "@openrouter/sdk": "^0.1.6",
     "@prisma/client": "^6.17.0",
     "@types/pg": "^8.15.5",
     "@typescript-eslint/eslint-plugin": "^8.46.0",

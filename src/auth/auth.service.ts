@@ -13,6 +13,7 @@ import * as crypto from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { UserRole } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -53,6 +54,7 @@ export class AuthService {
         password: hashedPassword,
         firstName: dto.firstName,
         lastName: dto.lastName,
+        role: dto.role || UserRole.USER,
         emailVerificationToken: verificationToken,
         emailVerificationExpires: verificationExpires,
       },
@@ -326,6 +328,7 @@ export class AuthService {
         email: true,
         firstName: true,
         lastName: true,
+        role: true, // ← AGREGAR
         isEmailVerified: true,
         createdAt: true,
       },
@@ -345,6 +348,7 @@ export class AuthService {
     const payload = {
       sub: user.id,
       email: user.email,
+      role: user.role, // ← AGREGAR
     };
 
     const accessToken = this.jwtService.sign(payload);
@@ -352,12 +356,13 @@ export class AuthService {
     return {
       accessToken,
       tokenType: 'Bearer',
-      expiresIn: 86400, // 24 horas
+      expiresIn: 86400,
       user: {
         id: user.id,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        role: user.role, // ← AGREGAR
         isEmailVerified: user.isEmailVerified,
       },
     };

@@ -7,7 +7,8 @@ import { QueriesModule } from './queries/queries.module';
 import { AnalysisModule } from './analysis/analysis.module';
 import { ComparisonModule } from './comparison/comparison.module';
 import { AuthModule } from './auth/auth.module';
-import { EmailModule } from './email/email.module'; // ← Verificar que esté
+import { EmailModule } from './email/email.module';
+import { EvaluationModule } from './evaluation/evaluation.module';
 
 @Module({
   imports: [
@@ -22,12 +23,13 @@ import { EmailModule } from './email/email.module'; // ← Verificar que esté
       },
     ]),
     PrismaModule,
-    EmailModule, // ← Verificar que esté
+    EmailModule,
     AuthModule,
     LlmModule,
     QueriesModule,
     AnalysisModule,
     ComparisonModule,
+    EvaluationModule
   ],
   controllers: [],
   providers: [],

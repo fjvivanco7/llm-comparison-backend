@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { UserRole } from '@prisma/client'; // ← AGREGAR
 
 export class AuthResponseDto {
   @ApiProperty({
@@ -26,6 +27,7 @@ export class AuthResponseDto {
     email: string;
     firstName?: string;
     lastName?: string;
+    role?: UserRole; // ← AGREGAR
     isEmailVerified: boolean;
   };
 }

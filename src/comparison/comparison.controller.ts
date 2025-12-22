@@ -1,4 +1,11 @@
-import { Controller, Get, Param, ParseIntPipe, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  UseGuards,
+  Req, // ← AGREGADO
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { ComparisonService } from './comparison.service';
 import { QueryComparisonDto } from './dto/comparison-result.dto';
@@ -8,8 +15,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Comparison')
 @Controller('comparison')
-@UseGuards(JwtAuthGuard) // ← PROTEGER todas las rutas
-@ApiBearerAuth() // ← Requerir token en Swagger
+@UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
 export class ComparisonController {
   constructor(private readonly comparisonService: ComparisonService) {}
 
@@ -64,25 +71,33 @@ export class ComparisonController {
   }
 
   /**
-   * Ranking global de LLMs
+   * Ranking de LLMs (filtrado por rol)
    */
   @Get('ranking')
   @ApiOperation({
-    summary: 'Ranking global de LLMs',
+    summary: 'Ranking de LLMs',
     description:
-      'Genera un ranking general de todos los LLMs basado en todas las consultas analizadas',
+      'Clasificación de modelos. Usuarios ven su propio ranking, evaluadores ven ranking global',
   })
   @ApiResponse({
     status: 200,
-    description: 'Ranking generado',
+    description: 'Ranking calculado exitosamente',
     type: GlobalRankingDto,
   })
   @ApiResponse({
     status: 401,
     description: 'No autenticado',
   })
-  async getGlobalRanking(): Promise<GlobalRankingDto> {
-    return await this.comparisonService.getGlobalRanking();
+  async getGlobalRanking(@Req() req: any): Promise<GlobalRankingDto> {
+    const user = req.user;
+
+    // Si es evaluador o admin, mostrar ranking global (sin filtro)
+    if (user.role === 'EVALUATOR' || user.role === 'ADMIN') {
+      return await this.comparisonService.getGlobalRanking();
+    }
+
+    // Si es usuario normal, mostrar solo su ranking
+    return await this.comparisonService.getGlobalRanking(user.id);
   }
 
   /**

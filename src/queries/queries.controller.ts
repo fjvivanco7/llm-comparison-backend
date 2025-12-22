@@ -8,7 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   ParseIntPipe,
-  UseGuards,
+  UseGuards, Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { QueriesService } from './queries.service';
@@ -16,6 +16,7 @@ import { CreateQueryDto } from './dto/create-query.dto';
 import { QueryResponseDto } from './dto/query-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { BadRequestException } from '@nestjs/common';
 
 @ApiTags('Queries')
 @Controller('queries')
@@ -133,5 +134,42 @@ export class QueriesController {
     @CurrentUser() user: any,
   ): Promise<void> {
     return await this.queriesService.remove(id, user.id);
+  }
+  /**
+   * Obtener un código generado específico por su ID
+   */
+  @Get('code/:codeId')
+  @ApiOperation({
+    summary: 'Obtener código generado por ID',
+    description: 'Obtiene los detalles de un código generado específico',
+  })
+  @ApiParam({
+    name: 'codeId',
+    description: 'ID del código generado',
+    type: Number,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Código encontrado',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Código no encontrado',
+  })
+  async getCodeById(
+    @Param('codeId') codeId: string,
+    @Req() req: any,
+  ) {
+    const parsedCodeId = parseInt(codeId, 10);
+
+    if (isNaN(parsedCodeId)) {
+      throw new BadRequestException('ID de código inválido');
+    }
+
+    return await this.queriesService.getCodeById(
+      parsedCodeId,
+      req.user.id,
+      req.user.role
+    );
   }
 }

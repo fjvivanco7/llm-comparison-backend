@@ -15,14 +15,24 @@ datasource db {
 }
 
 // ============================================
+// ENUM DE ROLES
+// ============================================
+enum UserRole {
+  USER
+  EVALUATOR
+  ADMIN
+}
+
+// ============================================
 // MODELO DE USUARIOS
 // ============================================
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
-  password  String   // Hash de bcrypt
+  password  String
   firstName String?
   lastName  String?
+  role      UserRole @default(USER) // ← SOLO AGREGAR ESTA LÍNEA
 
   isEmailVerified Boolean  @default(false)
   emailVerificationToken String? @unique
@@ -37,6 +47,7 @@ model User {
 
   // Relaciones
   queries UserQuery[]
+  qualitativeEvaluations QualitativeEvaluation[] // ← SOLO AGREGAR ESTA LÍNEA
 
   @@map("users")
 }
@@ -60,16 +71,17 @@ model UserQuery {
 model GeneratedCode {
   id               Int      @id @default(autoincrement())
   queryId          Int
-  llmName          String // 'gpt-4', 'claude', 'gemini', 'mistral'
+  llmName          String
   codeContent      String
   generatedAt      DateTime @default(now())
-  generationTimeMs Int? // tiempo que tardó el LLM en responder
+  generationTimeMs Int?
 
   // Relaciones
   query            UserQuery         @relation(fields: [queryId], references: [id], onDelete: Cascade)
   metrics          CodeMetrics?
   testExecutions   TestExecution[]
   securityFindings SecurityFinding[]
+  qualitativeEvaluations QualitativeEvaluation[] // ← SOLO AGREGAR ESTA LÍNEA
 
   @@map("generated_codes")
 }
@@ -145,4 +157,36 @@ model SecurityFinding {
   code GeneratedCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
 
   @@map("security_findings")
+}
+
+model QualitativeEvaluation {
+  id                Int      @id @default(autoincrement())
+  codeId            Int
+  evaluatorId       Int
+
+  // Criterios de evaluación (escala 1-5)
+  readabilityScore  Int      // Legibilidad
+  clarityScore      Int      // Claridad
+  structureScore    Int      // Estructura
+  documentationScore Int     // Documentación
+
+  // Score total (promedio)
+  totalScore        Float
+
+  // Comentarios del evaluador
+  generalComments   String?  @db.Text
+  readabilityComments String? @db.Text
+  clarityComments   String?  @db.Text
+  structureComments String?  @db.Text
+  documentationComments String? @db.Text
+
+  evaluatedAt       DateTime @default(now())
+
+  // Relaciones
+  code              GeneratedCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  evaluator         User          @relation(fields: [evaluatorId], references: [id])
+
+  // Un evaluador solo puede evaluar un código una vez
+  @@unique([codeId, evaluatorId])
+  @@map("qualitative_evaluations")
 }

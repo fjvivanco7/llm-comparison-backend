@@ -4,6 +4,7 @@ import { LlmService } from '../llm/llm.service';
 import { CreateQueryDto } from './dto/create-query.dto';
 import { QueryResponseDto } from './dto/query-response.dto';
 import { LlmProvider } from '../llm/dto/generate-code.dto';
+import { ForbiddenException } from '@nestjs/common';
 
 @Injectable()
 export class QueriesService {
@@ -105,7 +106,22 @@ export class QueriesService {
       include: {
         generatedCodes: {
           include: {
-            metrics: true, // ← AGREGAR ESTO
+            metrics: true,
+            qualitativeEvaluations: {  // ← AGREGAR ESTO
+              include: {
+                evaluator: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                  },
+                },
+              },
+              orderBy: {
+                evaluatedAt: 'desc',
+              },
+            },
           },
           orderBy: {
             generatedAt: 'asc',
@@ -179,8 +195,73 @@ export class QueriesService {
           totalScore: code.metrics.totalScore,
           analyzedAt: code.metrics.analyzedAt,
         } : undefined,
-
+        // ← AGREGAR EVALUACIONES CUALITATIVAS
+        qualitativeEvaluations: code.qualitativeEvaluations?.map((evaluation: any) => ({
+          id: evaluation.id,
+          codeId: evaluation.codeId,
+          evaluatorId: evaluation.evaluatorId,
+          evaluatorName: evaluation.evaluator.firstName && evaluation.evaluator.lastName
+            ? `${evaluation.evaluator.firstName} ${evaluation.evaluator.lastName}`
+            : evaluation.evaluator.email,
+          readabilityScore: evaluation.readabilityScore,
+          clarityScore: evaluation.clarityScore,
+          structureScore: evaluation.structureScore,
+          documentationScore: evaluation.documentationScore,
+          totalScore: evaluation.totalScore,
+          generalComments: evaluation.generalComments,
+          readabilityComments: evaluation.readabilityComments,
+          clarityComments: evaluation.clarityComments,
+          structureComments: evaluation.structureComments,
+          documentationComments: evaluation.documentationComments,
+          evaluatedAt: evaluation.evaluatedAt,
+        })) || [],
       })),
     };
   }
+
+  /**
+   * Obtener un código generado específico por su ID
+   */
+  async getCodeById(codeId: number, userId: number, userRole?: string) {
+    const code = await this.prisma.generatedCode.findUnique({
+      where: { id: codeId },
+      include: {
+        query: {
+          select: {
+            id: true,
+            userId: true,
+            userPrompt: true,
+            createdAt: true,
+          },
+        },
+        metrics: true,
+        qualitativeEvaluations: {
+          include: {
+            evaluator: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!code) {
+      throw new NotFoundException('Código no encontrado');
+    }
+    const isEvaluatorOrAdmin = userRole === 'EVALUATOR' || userRole === 'ADMIN';
+    const isOwner = code.query.userId === userId;
+
+    if (!isEvaluatorOrAdmin && !isOwner) {
+      throw new ForbiddenException('No tienes permiso para ver este código');
+    }
+
+    return code;
+  }
+
+
 }

@@ -98,25 +98,40 @@ export class ComparisonService {
     return comparison.winner;
   }
 
-  /**
-   * Genera ranking global de todos los LLMs
-   */
-  async getGlobalRanking(): Promise<GlobalRankingDto> {
-    this.logger.log('Generando ranking global de LLMs');
+  async getGlobalRanking(userId?: number) {
+    this.logger.log(
+      `Calculando ranking de LLMs${userId ? ` para usuario ${userId}` : ' global'}`,
+    );
 
-    // Obtener todos los códigos con métricas
+    // Construir el where clause según si es un usuario específico o global
+    const whereClause: any = {
+      metrics: {
+        isNot: null,
+      },
+    };
+
+    // Si se proporciona userId, filtrar solo sus códigos
+    if (userId) {
+      whereClause.query = {
+        userId,
+      };
+    }
+
+    // Obtener códigos con métricas (del usuario o todos)
     const allCodes = await this.prisma.generatedCode.findMany({
+      where: whereClause,
       include: {
         metrics: true,
-      },
-      where: {
-        metrics: {
-          isNot: null,
+        query: {
+          select: {
+            userId: true,
+          },
         },
       },
     });
 
     if (allCodes.length === 0) {
+      this.logger.warn('No hay códigos analizados para generar ranking');
       return {
         ranking: [],
         totalQueries: 0,
@@ -125,60 +140,184 @@ export class ComparisonService {
       };
     }
 
-    // Agrupar por LLM
-    const llmGroups = this.groupByLlm(allCodes);
+    // Definir tipos para modelStats
+    interface ModelStats {
+      codes: Array<{
+        id: number;
+        queryId: number;
+        llmName: string;
+        codeContent: string;
+        generatedAt: Date;
+        generationTimeMs: number | null;
+        metrics: {
+          id: number;
+          codeId: number;
+          passRate: number | null;
+          errorHandlingScore: number | null;
+          runtimeErrorRate: number | null;
+          avgExecutionTime: number | null;
+          memoryUsage: number | null;
+          algorithmicComplexity: number | null;
+          cyclomaticComplexity: number | null;
+          linesOfCode: number | null;
+          nestingDepth: number | null;
+          cohesionScore: number | null;
+          xssVulnerabilities: number | null;
+          injectionVulnerabilities: number | null;
+          hardcodedSecrets: number | null;
+          unsafeOperations: number | null;
+          totalScore: number | null;
+          analyzedAt: Date;
+        } | null;
+        query: {
+          userId: number;
+        };
+      }>;
+      totalScore: number;
+      categoryScores: {
+        correction: number[];
+        efficiency: number[];
+        maintainability: number[];
+        security: number[];
+      };
+    }
 
-    // Calcular estadísticas por LLM
-    const rankings: LlmRankingDto[] = await Promise.all(
-      Object.entries(llmGroups).map(async ([llmName, codes]) => {
-        // Tipar explícitamente codes
-        const typedCodes = codes as typeof allCodes;
-        const metrics = typedCodes
-          .map((c) => c.metrics)
-          .filter((m) => m !== null);
+    // Agrupar por LLM
+    const modelStats = new Map<string, ModelStats>();
+
+    for (const code of allCodes) {
+      if (!code.metrics) continue;
+
+      if (!modelStats.has(code.llmName)) {
+        modelStats.set(code.llmName, {
+          codes: [],
+          totalScore: 0,
+          categoryScores: {
+            correction: [],
+            efficiency: [],
+            maintainability: [],
+            security: [],
+          },
+        });
+      }
+
+      const stats = modelStats.get(code.llmName)!;
+      stats.codes.push(code);
+      stats.totalScore += code.metrics.totalScore || 0;
+
+      // Calcular scores por categoría
+      const m = code.metrics;
+
+      // Corrección
+      const correctionScore =
+        ((m.passRate || 0) +
+          (m.errorHandlingScore || 0) +
+          (100 - (m.runtimeErrorRate || 0))) /
+        3;
+      stats.categoryScores.correction.push(correctionScore);
+
+      // Eficiencia
+      const efficiencyScore =
+        ((m.avgExecutionTime ? Math.max(0, 100 - m.avgExecutionTime / 10) : 0) +
+          (m.memoryUsage ? Math.max(0, 100 - m.memoryUsage) : 0) +
+          (m.algorithmicComplexity
+            ? Math.max(0, 100 - m.algorithmicComplexity * 10)
+            : 0)) /
+        3;
+      stats.categoryScores.efficiency.push(efficiencyScore);
+
+      // Mantenibilidad
+      const maintainabilityScore =
+        ((m.cyclomaticComplexity
+            ? Math.max(0, 100 - m.cyclomaticComplexity * 5)
+            : 0) +
+          (m.linesOfCode ? Math.max(0, 100 - m.linesOfCode / 5) : 0) +
+          (m.nestingDepth ? Math.max(0, 100 - m.nestingDepth * 10) : 0) +
+          (m.cohesionScore || 0)) /
+        4;
+      stats.categoryScores.maintainability.push(maintainabilityScore);
+
+      // Seguridad
+      const securityScore =
+        (100 -
+          (m.xssVulnerabilities || 0) * 25 +
+          (100 - (m.injectionVulnerabilities || 0) * 25) +
+          (100 - (m.hardcodedSecrets || 0) * 25) +
+          (100 - (m.unsafeOperations || 0) * 25)) /
+        4;
+      stats.categoryScores.security.push(securityScore);
+    }
+
+    // Calcular promedios y construir ranking
+    const rankings = Array.from(modelStats.entries()).map(
+      ([llmName, stats]) => {
+        const avgTotalScore = stats.totalScore / stats.codes.length;
+
+        const avgCategoryScores = {
+          correction:
+            stats.categoryScores.correction.reduce((a, b) => a + b, 0) /
+            stats.categoryScores.correction.length,
+          efficiency:
+            stats.categoryScores.efficiency.reduce((a, b) => a + b, 0) /
+            stats.categoryScores.efficiency.length,
+          maintainability:
+            stats.categoryScores.maintainability.reduce((a, b) => a + b, 0) /
+            stats.categoryScores.maintainability.length,
+          security:
+            stats.categoryScores.security.reduce((a, b) => a + b, 0) /
+            stats.categoryScores.security.length,
+        };
+
+        // Contar victorias (mejor score en cada query)
+        const queryScores = new Map<number, { llm: string; score: number }>();
+
+        for (const code of stats.codes) {
+          const queryId = code.queryId;
+          const score = code.metrics?.totalScore || 0;
+
+          if (
+            !queryScores.has(queryId) ||
+            score > queryScores.get(queryId)!.score
+          ) {
+            queryScores.set(queryId, { llm: llmName, score });
+          }
+        }
+
+        const wins = Array.from(queryScores.values()).filter(
+          (q) => q.llm === llmName,
+        ).length;
 
         return {
           llmName,
-          totalAnalyzed: typedCodes.length,
-          avgTotalScore: this.calculateAverage(
-            metrics.map((m) => m.totalScore || 0),
-          ),
-          avgCategoryScores: {
-            correction: this.calculateAverage(
-              metrics.map((m) => this.calculateCorrectionScore(m)),
-            ),
-            efficiency: this.calculateAverage(
-              metrics.map((m) => this.calculateEfficiencyScore(m)),
-            ),
-            maintainability: this.calculateAverage(
-              metrics.map((m) => this.calculateMaintainabilityScore(m)),
-            ),
-            security: this.calculateAverage(
-              metrics.map((m) => this.calculateSecurityScore(m)),
-            ),
-          },
-          wins: await this.countWins(llmName),
-          overallRank: 0, // Se asignará después
+          totalAnalyzed: stats.codes.length,
+          avgTotalScore,
+          avgCategoryScores,
+          wins,
         };
-      }),
+      },
     );
 
-    // Ordenar por score promedio y asignar ranking
+    // Ordenar por score total
     rankings.sort((a, b) => b.avgTotalScore - a.avgTotalScore);
-    rankings.forEach((rank, index) => {
-      rank.overallRank = index + 1;
-    });
+
+    // Asignar ranks
+    const rankedModels = rankings.map((model, index) => ({
+      ...model,
+      overallRank: index + 1,
+    }));
 
     // Contar queries únicas
-    const uniqueQueries = new Set(allCodes.map((c) => c.queryId)).size;
+    const uniqueQueryIds = new Set(allCodes.map((c) => c.queryId));
 
     return {
-      ranking: rankings,
-      totalQueries: uniqueQueries,
+      ranking: rankedModels,
+      totalQueries: uniqueQueryIds.size,
       totalCodesAnalyzed: allCodes.length,
       generatedAt: new Date(),
     };
   }
+
+
 
   /**
    * Obtiene estadísticas de comparación

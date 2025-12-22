@@ -429,4 +429,123 @@ export class AnalysisService {
       });
     }
   }
+
+  /**
+   * Obtiene estadísticas para el dashboard
+   */
+  /**
+   * Obtiene estadísticas para el dashboard
+   */
+  async getDashboardStats(userId: number) {
+    this.logger.log(`Obteniendo estadísticas del dashboard para usuario ${userId}`);
+
+    // Total de consultas del usuario
+    const totalQueries = await this.prisma.userQuery.count({
+      where: { userId },
+    });
+
+    // Total de códigos generados
+    const totalCodesGenerated = await this.prisma.generatedCode.count({
+      where: {
+        query: {
+          userId,
+        },
+      },
+    });
+
+    // Total de análisis completados
+    const totalAnalysisCompleted = await this.prisma.codeMetrics.count({
+      where: {
+        code: {
+          query: {
+            userId,
+          },
+        },
+      },
+    });
+
+    // Obtener todos los códigos analizados del usuario
+    const analyzedCodes = await this.prisma.generatedCode.findMany({
+      where: {
+        query: {
+          userId,
+        },
+        metrics: {
+          isNot: null,
+        },
+      },
+      include: {
+        metrics: true,
+      },
+    });
+
+    // Calcular mejor LLM
+    let bestModel = {
+      name: '-',
+      avgScore: 0,
+    };
+
+    if (analyzedCodes.length > 0) {
+      // Agrupar por modelo
+      const modelStats = new Map<string, { total: number; sum: number }>();
+
+      analyzedCodes.forEach((code) => {
+        const llmName = code.llmName;
+        const totalScore = code.metrics?.totalScore || 0;
+
+        if (!modelStats.has(llmName)) {
+          modelStats.set(llmName, { total: 0, sum: 0 });
+        }
+
+        const stats = modelStats.get(llmName);
+
+        if (stats) { // ← Validación explícita
+          stats.total++;
+          stats.sum += totalScore;
+        }
+      });
+
+      // Encontrar el mejor
+      modelStats.forEach((stats, llmName) => {
+        const avgScore = stats.sum / stats.total;
+        if (avgScore > bestModel.avgScore) {
+          bestModel = {
+            name: llmName,
+            avgScore,
+          };
+        }
+      });
+    }
+
+    // Obtener consultas recientes
+    const recentQueries = await this.prisma.userQuery.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      include: {
+        _count: {
+          select: {
+            generatedCodes: true,
+          },
+        },
+      },
+    });
+
+    return {
+      totalQueries,
+      totalCodesGenerated,
+      totalAnalysisCompleted,
+      bestModel: {
+        name: bestModel.name,
+        avgScore: Math.round(bestModel.avgScore * 10) / 10,
+      },
+      recentQueries: recentQueries.map((query) => ({
+        id: query.id,
+        userPrompt: query.userPrompt,
+        status: query.status,
+        createdAt: query.createdAt,
+        codesCount: query._count.generatedCodes,
+      })),
+    };
+  }
 }

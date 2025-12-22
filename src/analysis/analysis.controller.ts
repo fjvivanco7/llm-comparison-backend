@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { AnalysisService, CompleteAnalysis } from './analysis.service';
@@ -332,5 +333,22 @@ export class AnalysisController {
         'El score total está ponderado según la importancia de cada categoría',
       ],
     };
+  }
+
+  @Get('dashboard/stats')
+  @ApiOperation({
+    summary: 'Estadísticas del dashboard',
+    description: 'Obtiene estadísticas resumidas para mostrar en el dashboard del usuario',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Estadísticas del dashboard',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
+  async getDashboardStats(@Req() req) {
+    return this.analysisService.getDashboardStats(req.user.id);
   }
 }

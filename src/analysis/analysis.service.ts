@@ -84,16 +84,13 @@ export class AnalysisService {
       const securityAnalysis =
         await this.securityService.analyzeSecurityIssues(code);
 
-      // 4. Análisis de ejecución (si hay casos de prueba)
-      this.logger.log('Ejecutando casos de prueba...');
-      const executionAnalysis =
-        testCases && testCases.length > 0
-          ? await this.executionService.executeWithTests(code, testCases)
-          : await this.executionService.executeWithTests(
-              code,
-              this.executionService.generateBasicTestCases(code),
-            );
 
+// 4. Análisis de ejecución con IA
+      this.logger.log('Ejecutando casos de prueba...');
+      const executionAnalysis = await this.executionService.executeWithTests(
+        code,
+        testCases, // Si testCases es undefined, ExecutionService genera con IA
+      );
       // 5. Calcular scores por categoría
       const correctionScore = this.calculateCorrectionScore(executionAnalysis);
       const efficiencyScore = this.calculateEfficiencyScore(executionAnalysis);

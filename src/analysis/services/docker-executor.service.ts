@@ -142,95 +142,203 @@ CMD timeout 30s node test-runner.js
 `;
   }
 
-  /**
-   * Genera script para ejecutar tests
-   */
   private generateTestRunner(testCases: TestCase[]): string {
+    // ✅ Serializar test cases de forma segura
+    const testCasesJson = JSON.stringify(testCases, null, 2)
+      .replace(/\\/g, '\\\\')  // Escapar backslashes
+      .replace(/`/g, '\\`')    // Escapar backticks (CORREGIDO)
+      .replace(/\$/g, '\\$');  // Escapar dollar signs
+
     return `
 import { performance } from 'perf_hooks';
-import codeModule from './code.js';
 
-const testCases = ${JSON.stringify(testCases)};
-const results = [];
-let passedTests = 0;
-let runtimeErrors = 0;
-const executionTimes = [];
+const testCases = ${testCasesJson};
 
-// Obtener función exportada
-const targetFunction = codeModule.default || codeModule;
+// Comparación profunda de objetos/arrays
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return false;
 
-if (typeof targetFunction !== 'function') {
-  console.error(JSON.stringify({
-    error: 'El código no exporta una función válida',
-    success: false
-  }));
-  process.exit(1);
-}
-
-// Ejecutar cada test
-for (const testCase of testCases) {
-  const startTime = performance.now();
-  
-  try {
-    const actualOutput = targetFunction(...testCase.input);
-    const executionTime = performance.now() - startTime;
-    executionTimes.push(executionTime);
-
-    const passed = JSON.stringify(actualOutput) === JSON.stringify(testCase.expectedOutput);
-    
-    if (passed) passedTests++;
-
-    results.push({
-      passed,
-      input: testCase.input,
-      expectedOutput: testCase.expectedOutput,
-      actualOutput,
-      executionTime,
-    });
-
-  } catch (error) {
-    runtimeErrors++;
-    const executionTime = performance.now() - startTime;
-    
-    results.push({
-      passed: false,
-      input: testCase.input,
-      expectedOutput: testCase.expectedOutput,
-      actualOutput: null,
-      executionTime,
-      error: error.message,
-    });
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!deepEqual(a[i], b[i])) return false;
+    }
+    return true;
   }
+
+  if (typeof a === 'object' && typeof b === 'object') {
+    const keysA = Object.keys(a).sort();
+    const keysB = Object.keys(b).sort();
+    if (keysA.length !== keysB.length) return false;
+    for (let key of keysA) {
+      if (!deepEqual(a[key], b[key])) return false;
+    }
+    return true;
+  }
+
+  return false;
 }
 
-// Calcular métricas
-const passRate = (passedTests / testCases.length) * 100;
-const avgExecutionTime = executionTimes.reduce((a, b) => a + b, 0) / executionTimes.length;
-const runtimeErrorRate = (runtimeErrors / testCases.length) * 100;
-const memoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+async function runTests() {
+  const results = [];
+  let passedTests = 0;
+  let runtimeErrors = 0;
+  const executionTimes = [];
 
-// Output JSON
-console.log(JSON.stringify({
-  success: true,
-  passRate,
-  avgExecutionTime,
-  runtimeErrorRate,
-  memoryUsage,
-  testResults: results,
-  totalTests: testCases.length,
-  passedTests,
-}));
+  // Importar el módulo de forma dinámica para capturar errores de importación
+  let codeModule;
+  try {
+    codeModule = await import('./code.js');
+  } catch (importError) {
+    console.log(JSON.stringify({
+      success: false,
+      error: 'Error importando el código: ' + importError.message,
+      passRate: 0,
+      avgExecutionTime: 0,
+      runtimeErrorRate: 100,
+      memoryUsage: 0,
+      testResults: [],
+      totalTests: testCases.length,
+      passedTests: 0,
+    }));
+    return;
+  }
+
+  const targetFunction = codeModule.default || codeModule;
+
+  if (typeof targetFunction !== 'function') {
+    console.log(JSON.stringify({
+      success: false,
+      error: 'El código no exporta una función válida. Tipo recibido: ' + typeof targetFunction,
+      passRate: 0,
+      avgExecutionTime: 0,
+      runtimeErrorRate: 100,
+      memoryUsage: 0,
+      testResults: [],
+      totalTests: testCases.length,
+      passedTests: 0,
+    }));
+    return;
+  }
+
+  for (const testCase of testCases) {
+    const startTime = performance.now();
+
+    try {
+      const actualOutput = await Promise.resolve(targetFunction(...testCase.input));
+      const executionTime = performance.now() - startTime;
+      executionTimes.push(executionTime);
+
+      const passed = deepEqual(actualOutput, testCase.expectedOutput);
+
+      if (passed) passedTests++;
+
+      results.push({
+        passed,
+        input: testCase.input,
+        expectedOutput: testCase.expectedOutput,
+        actualOutput,
+        executionTime,
+      });
+
+    } catch (error) {
+      runtimeErrors++;
+      const executionTime = performance.now() - startTime;
+
+      results.push({
+        passed: false,
+        input: testCase.input,
+        expectedOutput: testCase.expectedOutput,
+        actualOutput: null,
+        executionTime,
+        error: error.message,
+      });
+    }
+  }
+
+  const passRate = (passedTests / testCases.length) * 100;
+  const avgExecutionTime = executionTimes.length > 0
+    ? executionTimes.reduce((a, b) => a + b, 0) / executionTimes.length
+    : 0;
+  const runtimeErrorRate = (runtimeErrors / testCases.length) * 100;
+  const memoryUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+
+  console.log(JSON.stringify({
+    success: true,
+    passRate,
+    avgExecutionTime,
+    runtimeErrorRate,
+    memoryUsage,
+    testResults: results,
+    totalTests: testCases.length,
+    passedTests,
+  }));
+}
+
+runTests().catch(err => {
+  console.log(JSON.stringify({
+    success: false,
+    error: 'Error fatal en el test runner: ' + err.message,
+    passRate: 0,
+    avgExecutionTime: 0,
+    runtimeErrorRate: 100,
+    memoryUsage: 0,
+    testResults: [],
+    totalTests: testCases.length,
+    passedTests: 0,
+  }));
+});
 `;
+  }
+
+  /**
+   * Convierte require() de CommonJS a import de ES Modules
+   */
+  private convertRequireToImport(code: string): string {
+    let result = code;
+
+    // Caso 1: const/let/var name = require('module')
+    // → import name from 'module'
+    result = result.replace(
+      /(?:const|let|var)\s+(\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)\s*;?/g,
+      "import $1 from '$2';",
+    );
+
+    // Caso 2: const/let/var { a, b } = require('module')
+    // → import { a, b } from 'module'
+    result = result.replace(
+      /(?:const|let|var)\s+(\{[^}]+\})\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)\s*;?/g,
+      "import $1 from '$2';",
+    );
+
+    // Caso 3: require('module') usado inline (sin asignación)
+    // Esto es más complejo, lo dejamos como está si no hay asignación
+
+    if (result !== code) {
+      this.logger.log('🔄 Convertido require() a import ES Module');
+    }
+
+    return result;
   }
 
   /**
    * Envuelve el código para exportarlo como módulo ES6
    */
   private wrapCodeForExport(code: string): string {
-    const cleanCode = code.trim();
+    let cleanCode = code.trim();
 
-    // Si ya tiene export, devolverlo tal cual
-    if (cleanCode.includes('export default') || cleanCode.includes('module.exports')) {
+    // Convertir CommonJS require() a ES Module imports
+    cleanCode = this.convertRequireToImport(cleanCode);
+
+    // Si ya tiene export default, devolverlo tal cual
+    if (cleanCode.includes('export default')) {
+      return cleanCode;
+    }
+
+    // Si tiene module.exports, convertirlo a export default
+    if (cleanCode.includes('module.exports')) {
+      cleanCode = cleanCode.replace(/module\.exports\s*=\s*(\w+);?/g, 'export default $1;');
       return cleanCode;
     }
 
@@ -375,7 +483,11 @@ export default generatedCode;
       stderr: true,
     });
 
-    const output = logs.toString('utf8');
+    // Docker devuelve logs multiplexados con headers de 8 bytes por frame
+    // Necesitamos demultiplexar para obtener el texto limpio
+    const output = this.demultiplexDockerLogs(logs);
+
+    this.logger.debug(`📋 Output del container:\n${output}`);
 
     // Eliminar container
     await container.remove();
@@ -386,20 +498,101 @@ export default generatedCode;
   }
 
   /**
+   * Demultiplexa los logs de Docker
+   * Docker streams tienen headers de 8 bytes: [type(1), 0, 0, 0, size(4 bytes big-endian)]
+   */
+  private demultiplexDockerLogs(buffer: Buffer): string {
+    const output: string[] = [];
+    let offset = 0;
+
+    while (offset < buffer.length) {
+      // Header: 8 bytes
+      if (offset + 8 > buffer.length) {
+        // No hay suficientes bytes para un header completo, tomar el resto como texto
+        const remaining = buffer.slice(offset).toString('utf8');
+        if (remaining.trim()) {
+          output.push(remaining);
+        }
+        break;
+      }
+
+      // Byte 0: tipo (1=stdout, 2=stderr)
+      // Bytes 4-7: tamaño del mensaje (big-endian)
+      const size = buffer.readUInt32BE(offset + 4);
+
+      if (size === 0) {
+        offset += 8;
+        continue;
+      }
+
+      if (offset + 8 + size > buffer.length) {
+        // El frame está incompleto, tomar lo que queda
+        const remaining = buffer.slice(offset + 8).toString('utf8');
+        if (remaining.trim()) {
+          output.push(remaining);
+        }
+        break;
+      }
+
+      // Extraer el mensaje
+      const message = buffer.slice(offset + 8, offset + 8 + size).toString('utf8');
+      output.push(message);
+
+      offset += 8 + size;
+    }
+
+    return output.join('');
+  }
+
+  /**
    * Parsea resultados de la ejecución
    */
   private parseResults(output: string): DockerExecutionResult {
     try {
-      // Extraer JSON del output
-      const jsonMatch = output.match(/\{[\s\S]*"success"[\s\S]*\}/);
-      if (!jsonMatch) {
+      // Extraer JSON del output - buscar el último JSON válido que contenga "success"
+      const jsonMatches = output.match(/\{[^{}]*"success"[^{}]*\}|\{[\s\S]*"success"[\s\S]*\}/g);
+
+      if (!jsonMatches || jsonMatches.length === 0) {
+        this.logger.error(`Output sin JSON: ${output.substring(0, 500)}`);
         throw new Error('No se encontró JSON en el output');
       }
 
-      const data = JSON.parse(jsonMatch[0]);
+      // Intentar parsear cada match hasta encontrar uno válido
+      let data: any = null;
+      let parseError: Error | null = null;
 
+      for (const match of jsonMatches) {
+        try {
+          data = JSON.parse(match);
+          if (data && typeof data.success !== 'undefined') {
+            break;
+          }
+        } catch (e) {
+          parseError = e;
+          continue;
+        }
+      }
+
+      if (!data) {
+        throw parseError || new Error('No se pudo parsear ningún JSON válido');
+      }
+
+      // Si success es false, devolver resultado de error con los datos que tenemos
       if (!data.success) {
-        throw new Error(data.error || 'Ejecución fallida');
+        this.logger.warn(`⚠️ Ejecución reportó error: ${data.error}`);
+        return {
+          passRate: data.passRate || 0,
+          errorHandlingScore: 0,
+          runtimeErrorRate: data.runtimeErrorRate || 100,
+          avgExecutionTime: data.avgExecutionTime || 0,
+          memoryUsage: data.memoryUsage || 0,
+          algorithmicComplexity: 1,
+          testResults: data.testResults || [],
+          totalTests: data.totalTests || 0,
+          passedTests: data.passedTests || 0,
+          executionSkipped: true,
+          skipReason: data.error || 'Ejecución fallida',
+        };
       }
 
       return {

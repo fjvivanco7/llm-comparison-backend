@@ -138,4 +138,35 @@ export class OpenRouterProvider implements ILlmProvider {
       mistral: 'mistral-large',
     };
   }
+
+  /**
+   * Genera respuesta raw sin formateo (para validaciones)
+   */
+  async generateRaw(model: string, prompt: string): Promise<string> {
+    try {
+      const response = await this.client.chat.send(
+        {
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          maxTokens: 500,
+          stream: false,
+        },
+        {
+          headers: {
+            'HTTP-Referer': 'http://localhost:3000',
+            'X-Title': 'LLM Comparison Tool',
+          },
+        }
+      );
+
+      const content = response.choices[0]?.message?.content;
+      return Array.isArray(content)
+        ? content.map((c) => (typeof c === 'string' ? c : c.type === 'text' ? c.text : '')).join('')
+        : (content || '');
+    } catch (error) {
+      this.logger.error(`❌ Error en generateRaw: ${error.message}`);
+      throw error;
+    }
+  }
 }

@@ -34,99 +34,144 @@ export class EmailService {
       <!DOCTYPE html>
       <html>
       <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-          body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f4f4f4;
+          * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #09090b;
+            background-color: #fafafa;
+            margin: 0;
+            padding: 20px;
           }
           .container {
-            max-width: 600px;
-            margin: 40px auto;
-            background: white;
-            border-radius: 10px;
+            max-width: 560px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            border: 1px solid #e4e4e7;
           }
           .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 40px 20px;
+            background: #18181b;
+            padding: 48px 32px;
             text-align: center;
           }
           .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #ffffff;
             margin: 0;
-            font-size: 28px;
+            letter-spacing: -0.025em;
           }
           .content {
-            padding: 40px 30px;
+            padding: 48px 32px;
+          }
+          .greeting {
+            font-size: 16px;
+            color: #09090b;
+            margin-bottom: 16px;
+          }
+          .message {
+            font-size: 15px;
+            color: #52525b;
+            margin-bottom: 32px;
+            line-height: 1.7;
+          }
+          .button-container {
+            text-align: center;
+            margin: 32px 0;
           }
           .button {
             display: inline-block;
-            background: #667eea;
-            color: white !important;
-            padding: 15px 40px;
+            background: #18181b;
+            color: #ffffff !important;
+            padding: 12px 32px;
             text-decoration: none;
-            border-radius: 5px;
-            margin: 20px 0;
-            font-weight: bold;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: background 0.2s;
           }
           .button:hover {
-            background: #5568d3;
+            background: #27272a;
           }
-          .token-box {
-            background: #f8f9fa;
-            border: 2px dashed #667eea;
-            border-radius: 5px;
-            padding: 15px;
-            margin: 20px 0;
-            word-break: break-all;
-            font-family: monospace;
-            font-size: 14px;
+          .info-box {
+            background: #fafafa;
+            border: 1px solid #e4e4e7;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 24px 0;
+          }
+          .info-box p {
+            font-size: 13px;
+            color: #71717a;
+            margin: 0;
+          }
+          .info-box strong {
+            color: #52525b;
+          }
+          .divider {
+            height: 1px;
+            background: #e4e4e7;
+            margin: 32px 0;
           }
           .footer {
             text-align: center;
-            padding: 20px;
-            background: #f8f9fa;
-            color: #666;
-            font-size: 12px;
+            padding: 32px;
+            background: #fafafa;
+            border-top: 1px solid #e4e4e7;
+          }
+          .footer p {
+            font-size: 13px;
+            color: #a1a1aa;
+            margin: 4px 0;
+          }
+          .security-note {
+            font-size: 13px;
+            color: #71717a;
+            margin-top: 24px;
           }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
-            <h1>🎉 ¡Bienvenido a LLM Comparison!</h1>
+            <h1>Verificación de Email</h1>
           </div>
           <div class="content">
-            <p>Hola <strong>${firstName || 'Usuario'}</strong>,</p>
-            <p>Gracias por registrarte en <strong>LLM Comparison</strong>. Para completar tu registro, necesitas verificar tu correo electrónico.</p>
-            
-            <div style="text-align: center;">
+            <p class="greeting">Hola <strong>${firstName || 'Usuario'}</strong>,</p>
+            <p class="message">
+              Gracias por registrarte en LLM Comparison. Para completar tu registro y comenzar a usar la plataforma, necesitas verificar tu correo electrónico.
+            </p>
+
+            <div class="button-container">
               <a href="${verificationUrl}" class="button">
-                ✅ Verificar mi email
+                Verificar correo electrónico
               </a>
             </div>
 
-            <p><strong>O copia este token y úsalo en el endpoint:</strong></p>
-            <div class="token-box">
-              ${token}
+            <div class="info-box">
+              <p><strong>Este enlace expirará en 24 horas.</strong></p>
+              <p>Por motivos de seguridad, el enlace de verificación solo será válido durante las próximas 24 horas.</p>
             </div>
 
-            <p>También puedes usar este enlace completo:</p>
-            <div class="token-box" style="font-size: 12px;">
-              ${verificationUrl}
-            </div>
+            <div class="divider"></div>
 
-            <p style="margin-top: 30px;"><strong>⏰ Este token expirará en 24 horas.</strong></p>
-            <p style="color: #666; font-size: 14px;">Si no creaste esta cuenta, puedes ignorar este email.</p>
+            <p class="security-note">
+              Si no creaste esta cuenta, puedes ignorar este correo de manera segura. No se realizará ningún cambio en tu información.
+            </p>
           </div>
           <div class="footer">
-            <p>© 2025 LLM Comparison. Todos los derechos reservados.</p>
-            <p>Este es un email automático, por favor no respondas.</p>
+            <p><strong>LLM Comparison</strong></p>
+            <p>© 2025 Todos los derechos reservados</p>
+            <p>Este es un correo automático, por favor no respondas</p>
           </div>
         </div>
       </body>
@@ -137,7 +182,7 @@ export class EmailService {
       await this.transporter.sendMail({
         from: this.configService.get<string>('MAIL_FROM'),
         to: email,
-        subject: '✅ Verifica tu correo electrónico - LLM Comparison',
+        subject: 'Verifica tu correo electrónico - LLM Comparison',
         html: htmlContent,
       });
 
@@ -178,116 +223,165 @@ export class EmailService {
       <!DOCTYPE html>
       <html>
       <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-          body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f4f4f4;
+          * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #09090b;
+            background-color: #fafafa;
+            margin: 0;
+            padding: 20px;
           }
           .container {
-            max-width: 600px;
-            margin: 40px auto;
-            background: white;
-            border-radius: 10px;
+            max-width: 560px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            border: 1px solid #e4e4e7;
           }
           .header {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            padding: 40px 20px;
+            background: #3b82f6;
+            padding: 48px 32px;
             text-align: center;
           }
           .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #ffffff;
             margin: 0;
-            font-size: 28px;
+            letter-spacing: -0.025em;
           }
           .content {
-            padding: 40px 30px;
+            padding: 48px 32px;
+          }
+          .greeting {
+            font-size: 16px;
+            color: #09090b;
+            margin-bottom: 16px;
+          }
+          .message {
+            font-size: 15px;
+            color: #52525b;
+            margin-bottom: 32px;
+            line-height: 1.7;
+          }
+          .button-container {
+            text-align: center;
+            margin: 32px 0;
           }
           .button {
             display: inline-block;
-            background: #f5576c;
-            color: white !important;
-            padding: 15px 40px;
+            background: #3b82f6;
+            color: #ffffff !important;
+            padding: 12px 32px;
             text-decoration: none;
-            border-radius: 5px;
-            margin: 20px 0;
-            font-weight: bold;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 14px;
+            transition: background 0.2s;
           }
           .button:hover {
-            background: #e04458;
+            background: #2563eb;
           }
-          .token-box {
-            background: #f8f9fa;
-            border: 2px dashed #f5576c;
-            border-radius: 5px;
-            padding: 15px;
-            margin: 20px 0;
-            word-break: break-all;
-            font-family: monospace;
-            font-size: 14px;
+          .warning-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-left: 3px solid #3b82f6;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 24px 0;
           }
-          .warning {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 5px;
+          .warning-box p {
+            font-size: 13px;
+            color: #1e3a8a;
+            margin: 0 0 8px 0;
+          }
+          .warning-box p:last-child {
+            margin-bottom: 0;
+          }
+          .warning-box strong {
+            color: #1e40af;
+          }
+          .info-box {
+            background: #fafafa;
+            border: 1px solid #e4e4e7;
+            border-radius: 6px;
+            padding: 16px;
+            margin: 24px 0;
+          }
+          .info-box p {
+            font-size: 13px;
+            color: #71717a;
+            margin: 0;
+          }
+          .info-box strong {
+            color: #52525b;
+          }
+          .divider {
+            height: 1px;
+            background: #e4e4e7;
+            margin: 32px 0;
           }
           .footer {
             text-align: center;
-            padding: 20px;
-            background: #f8f9fa;
-            color: #666;
-            font-size: 12px;
+            padding: 32px;
+            background: #fafafa;
+            border-top: 1px solid #e4e4e7;
+          }
+          .footer p {
+            font-size: 13px;
+            color: #a1a1aa;
+            margin: 4px 0;
+          }
+          .security-note {
+            font-size: 13px;
+            color: #71717a;
+            margin-top: 24px;
           }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
-            <h1>🔒 Recuperación de Contraseña</h1>
+            <h1>Recuperación de Contraseña</h1>
           </div>
           <div class="content">
-            <p>Hola <strong>${firstName || 'Usuario'}</strong>,</p>
-            <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta en <strong>LLM Comparison</strong>.</p>
-            
-            <div style="text-align: center;">
+            <p class="greeting">Hola <strong>${firstName || 'Usuario'}</strong>,</p>
+            <p class="message">
+              Recibimos una solicitud para restablecer la contraseña de tu cuenta en LLM Comparison. Haz clic en el botón a continuación para crear una nueva contraseña.
+            </p>
+
+            <div class="button-container">
               <a href="${resetUrl}" class="button">
-                🔑 Restablecer contraseña
+                Restablecer contraseña
               </a>
             </div>
 
-            <p><strong>O copia este token y úsalo en el endpoint:</strong></p>
-            <div class="token-box">
-              ${token}
+            <div class="warning-box">
+              <p><strong>Información importante:</strong></p>
+              <p>• Este enlace expirará en 1 hora</p>
+              <p>• Tu contraseña actual seguirá siendo válida hasta que completes el proceso</p>
+              <p>• Solo puedes usar este enlace una vez</p>
             </div>
 
-            <p>También puedes usar este enlace completo:</p>
-            <div class="token-box" style="font-size: 12px;">
-              ${resetUrl}
-            </div>
+            <div class="divider"></div>
 
-            <div class="warning">
-              <strong>⚠️ Importante:</strong>
-              <ul style="margin: 10px 0; padding-left: 20px;">
-                <li>Este enlace expirará en <strong>1 hora</strong></li>
-                <li>Si no solicitaste este cambio, ignora este email</li>
-                <li>Tu contraseña actual seguirá siendo válida hasta que la cambies</li>
-              </ul>
-            </div>
-
-            <p style="margin-top: 30px; color: #666; font-size: 14px;">
-              Si tienes problemas, contacta con soporte.
+            <p class="security-note">
+              Si no solicitaste este cambio de contraseña, puedes ignorar este correo de manera segura. Tu cuenta permanecerá protegida y no se realizará ningún cambio.
             </p>
           </div>
           <div class="footer">
-            <p>© 2025 LLM Comparison. Todos los derechos reservados.</p>
-            <p>Este es un email automático, por favor no respondas.</p>
+            <p><strong>LLM Comparison</strong></p>
+            <p>© 2025 Todos los derechos reservados</p>
+            <p>Este es un correo automático, por favor no respondas</p>
           </div>
         </div>
       </body>
@@ -298,7 +392,7 @@ export class EmailService {
       await this.transporter.sendMail({
         from: this.configService.get<string>('MAIL_FROM'),
         to: email,
-        subject: '🔒 Recuperación de contraseña - LLM Comparison',
+        subject: 'Recuperación de contraseña - LLM Comparison',
         html: htmlContent,
       });
 

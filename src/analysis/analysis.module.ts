@@ -8,7 +8,6 @@ import { ExecutionService } from './services/execution.service';
 import { TestGeneratorService } from './services/test-generator.service';
 import { DockerExecutorService } from './services/docker-executor.service'; // ← NUEVO
 import { PrismaModule } from '../prisma/prisma.module';
-import { OllamaTestGeneratorService } from './services/ollama-test-generator.service';
 
 @Module({
   imports: [PrismaModule, ConfigModule],
@@ -20,7 +19,6 @@ import { OllamaTestGeneratorService } from './services/ollama-test-generator.ser
     ExecutionService,
     TestGeneratorService,
     DockerExecutorService,
-    OllamaTestGeneratorService
   ],
   exports: [AnalysisService],
 })

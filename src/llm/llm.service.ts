@@ -167,4 +167,49 @@ export class LlmService {
       openrouter: openRouterModels, // ← NUEVO
     };
   }
+
+  /**
+   * Valida si el código generado es una función válida usando IA
+   */
+  async validateIsFunction(code: string): Promise<{ isValid: boolean; reason: string }> {
+    this.logger.log('🔍 Validando si el código es una función...');
+
+    try {
+      const validationPrompt = `Is this code a pure JavaScript function? No React, no JSX, no components, no classes. Only plain JavaScript functions.
+
+CODE:
+\`\`\`
+${code}
+\`\`\`
+
+Respond ONLY with JSON:
+{"isFunction": true/false, "reason": "brief explanation"}`;
+
+      const response = await this.openRouterProvider.generateRaw(
+        'mistralai/mistral-7b-instruct:free',
+        validationPrompt,
+      );
+
+      // Parsear respuesta
+      const jsonMatch = response.match(/\{[\s\S]*"isFunction"[\s\S]*\}/);
+      if (!jsonMatch) {
+        this.logger.warn('⚠️ No se pudo parsear respuesta de validación, asumiendo válido');
+        return { isValid: true, reason: 'No se pudo validar, asumiendo válido' };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const isValid = parsed.isFunction === true;
+
+      this.logger.log(`${isValid ? '✅' : '❌'} Validación: ${parsed.reason}`);
+
+      return {
+        isValid,
+        reason: parsed.reason || (isValid ? 'Es una función válida' : 'No es una función'),
+      };
+    } catch (error) {
+      this.logger.error(`Error en validación: ${error.message}`);
+      // En caso de error, permitir el código para no bloquear
+      return { isValid: true, reason: 'Error en validación, asumiendo válido' };
+    }
+  }
 }

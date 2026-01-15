@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -25,6 +26,7 @@ export class AuthController {
    * Registro de nuevo usuario
    */
   @Post('register')
+  @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 registros por hora
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar nuevo usuario',
@@ -39,6 +41,10 @@ export class AuthController {
     status: 409,
     description: 'El email ya está registrado',
   })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiados intentos, intenta más tarde',
+  })
   async register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
     return await this.authService.register(dto);
   }
@@ -47,6 +53,7 @@ export class AuthController {
    * Login de usuario
    */
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 900000 } }) // 5 intentos por 15 minutos
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Iniciar sesión',
@@ -61,6 +68,10 @@ export class AuthController {
     status: 401,
     description: 'Credenciales inválidas',
   })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiados intentos de login, intenta en 15 minutos',
+  })
   async login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
     return await this.authService.login(dto);
   }
@@ -69,6 +80,7 @@ export class AuthController {
    * Verificar email con token
    */
   @Get('verify-email')
+  @Throttle({ default: { limit: 10, ttl: 3600000 } }) // 10 intentos por hora
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Verificar email',
@@ -87,6 +99,10 @@ export class AuthController {
     status: 400,
     description: 'Token inválido o expirado',
   })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiados intentos, intenta más tarde',
+  })
   async verifyEmail(@Query('token') token: string) {
     return await this.authService.verifyEmail(token);
   }
@@ -95,6 +111,7 @@ export class AuthController {
    * Reenviar email de verificación
    */
   @Post('resend-verification')
+  @Throttle({ default: { limit: 2, ttl: 3600000 } }) // 2 reenvíos por hora
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Reenviar email de verificación',
@@ -107,6 +124,10 @@ export class AuthController {
   @ApiResponse({
     status: 400,
     description: 'Email ya verificado o usuario no encontrado',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiados intentos, intenta en 1 hora',
   })
   async resendVerification(@Body() body: { email: string }) {
     return await this.authService.resendVerificationEmail(body.email);
@@ -138,6 +159,7 @@ export class AuthController {
    * Solicitar recuperación de contraseña
    */
   @Post('forgot-password')
+  @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 solicitudes por hora
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Solicitar recuperación de contraseña',
@@ -147,6 +169,10 @@ export class AuthController {
     status: 200,
     description: 'Email de recuperación enviado (si el email existe)',
   })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiados intentos, intenta más tarde',
+  })
   async forgotPassword(@Body() body: { email: string }) {
     return await this.authService.forgotPassword(body.email);
   }
@@ -155,6 +181,7 @@ export class AuthController {
    * Restablecer contraseña con token
    */
   @Post('reset-password')
+  @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 intentos por hora
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Restablecer contraseña',
@@ -167,6 +194,10 @@ export class AuthController {
   @ApiResponse({
     status: 400,
     description: 'Token inválido o expirado',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Demasiados intentos, intenta más tarde',
   })
   async resetPassword(@Body() body: { token: string; newPassword: string }) {
     return await this.authService.resetPassword(body.token, body.newPassword);

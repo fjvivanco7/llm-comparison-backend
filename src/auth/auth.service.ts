@@ -104,6 +104,9 @@ export class AuthService {
     });
 
     if (!user) {
+      this.logger.warn(
+        `⚠️ SEGURIDAD: Intento de login con email inexistente: ${dto.email}`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
@@ -111,10 +114,16 @@ export class AuthService {
     const isPasswordValid = await bcrypt.compare(dto.password, user.password);
 
     if (!isPasswordValid) {
+      this.logger.warn(
+        `⚠️ SEGURIDAD: Intento de login con contraseña incorrecta para: ${dto.email}`,
+      );
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
     if (!user.isEmailVerified) {
+      this.logger.warn(
+        `⚠️ Intento de login sin verificar email: ${dto.email}`,
+      );
       throw new UnauthorizedException(
         'Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.',
       );
@@ -126,7 +135,7 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    this.logger.log(`Login exitoso: ${user.email}`);
+    this.logger.log(`✅ Login exitoso: ${user.email}`);
 
     // Generar token
     return this.generateAuthResponse(user);
@@ -136,7 +145,17 @@ export class AuthService {
    * Verificar email con token
    */
   async verifyEmail(token: string) {
-    this.logger.log(`Intentando verificar email con token: ${token}`);
+    this.logger.log(`Intentando verificar email con token`);
+
+    // Validar y sanitizar token
+    if (!this.isValidToken(token)) {
+      this.logger.warn(
+        `⚠️ SEGURIDAD: Intento de verificación con token malformado`,
+      );
+      throw new BadRequestException(
+        'Token de verificación inválido o expirado',
+      );
+    }
 
     // Buscar usuario con el token
     const user = await this.prisma.user.findFirst({
@@ -149,6 +168,9 @@ export class AuthService {
     });
 
     if (!user) {
+      this.logger.warn(
+        `⚠️ SEGURIDAD: Intento de verificación con token inválido o expirado`,
+      );
       throw new BadRequestException(
         'Token de verificación inválido o expirado',
       );
@@ -164,7 +186,7 @@ export class AuthService {
       },
     });
 
-    this.logger.log(`Email verificado exitosamente: ${user.email}`);
+    this.logger.log(`✅ Email verificado exitosamente: ${user.email}`);
 
     return {
       message: 'Email verificado exitosamente',
@@ -280,6 +302,16 @@ export class AuthService {
   async resetPassword(token: string, newPassword: string) {
     this.logger.log(`Intentando restablecer contraseña con token`);
 
+    // Validar y sanitizar token
+    if (!this.isValidToken(token)) {
+      this.logger.warn(
+        `⚠️ SEGURIDAD: Intento de reset password con token malformado`,
+      );
+      throw new BadRequestException(
+        'Token de recuperación inválido o expirado',
+      );
+    }
+
     // Buscar usuario con el token válido
     const user = await this.prisma.user.findFirst({
       where: {
@@ -291,6 +323,9 @@ export class AuthService {
     });
 
     if (!user) {
+      this.logger.warn(
+        `⚠️ SEGURIDAD: Intento de reset password con token inválido o expirado`,
+      );
       throw new BadRequestException(
         'Token de recuperación inválido o expirado',
       );
@@ -309,7 +344,7 @@ export class AuthService {
       },
     });
 
-    this.logger.log(`Contraseña restablecida exitosamente: ${user.email}`);
+    this.logger.log(`✅ Contraseña restablecida exitosamente: ${user.email}`);
 
     return {
       message: 'Contraseña restablecida exitosamente',
@@ -373,5 +408,27 @@ export class AuthService {
    */
   private generateVerificationToken(): string {
     return crypto.randomBytes(32).toString('hex');
+  }
+
+  /**
+   * Validar formato de token
+   * Debe ser hexadecimal de 64 caracteres
+   */
+  private isValidToken(token: string): boolean {
+    if (!token || typeof token !== 'string') {
+      return false;
+    }
+
+    // Sanitizar: eliminar espacios en blanco
+    token = token.trim();
+
+    // Validar longitud (64 caracteres hex = 32 bytes)
+    if (token.length !== 64) {
+      return false;
+    }
+
+    // Validar que sea hexadecimal
+    const hexPattern = /^[a-f0-9]{64}$/i;
+    return hexPattern.test(token);
   }
 }

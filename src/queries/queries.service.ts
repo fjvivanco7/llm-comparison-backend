@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { CreateQueryDto } from './dto/create-query.dto';
@@ -15,6 +15,44 @@ export class QueriesService {
     private readonly llmService: LlmService,
   ) {}
 
+  private readonly DAILY_QUERY_LIMIT = 10;
+
+  /**
+   * Cuenta las consultas del usuario en el día actual
+   */
+  private async getDailyQueryCount(userId: number): Promise<number> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const count = await this.prisma.userQuery.count({
+      where: {
+        userId,
+        createdAt: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+    });
+
+    this.logger.log(`📊 Usuario ${userId}: ${count}/${this.DAILY_QUERY_LIMIT} consultas hoy`);
+    return count;
+  }
+
+  /**
+   * Obtiene las consultas restantes del día para el usuario
+   */
+  async getRemainingQueries(userId: number): Promise<{ used: number; limit: number; remaining: number }> {
+    const used = await this.getDailyQueryCount(userId);
+    return {
+      used,
+      limit: this.DAILY_QUERY_LIMIT,
+      remaining: Math.max(0, this.DAILY_QUERY_LIMIT - used),
+    };
+  }
+
   /**
    * Crea una nueva consulta y genera código con múltiples modelos
    */
@@ -25,6 +63,14 @@ export class QueriesService {
     this.logger.log(`Creando nueva consulta para usuario ${userId}: "${dto.userPrompt}"`);
 
     try {
+      // 0. Verificar límite diario de consultas
+      const todayQueries = await this.getDailyQueryCount(userId);
+      if (todayQueries >= this.DAILY_QUERY_LIMIT) {
+        throw new BadRequestException(
+          `Has alcanzado el límite de ${this.DAILY_QUERY_LIMIT} consultas por día. Intenta mañana.`,
+        );
+      }
+
       // 1. Crear la consulta en la BD con userId
       const query = await this.prisma.userQuery.create({
         data: {
@@ -46,7 +92,19 @@ export class QueriesService {
 
       this.logger.log(`${llmResponses.length} códigos generados exitosamente`);
 
-      // 3. Guardar cada código generado en la BD
+      // 3. Validar que cada código sea una función
+      this.logger.log('🔍 Validando que los códigos sean funciones...');
+      for (const response of llmResponses) {
+        const validation = await this.llmService.validateIsFunction(response.code);
+        if (!validation.isValid) {
+          throw new BadRequestException(
+            `El código generado por ${response.model} no es una función válida: ${validation.reason}`,
+          );
+        }
+      }
+      this.logger.log('✅ Todos los códigos son funciones válidas');
+
+      // 4. Guardar cada código generado en la BD
       const savedCodes = await Promise.all(
         llmResponses.map(async (response) => {
           return await this.prisma.generatedCode.create({

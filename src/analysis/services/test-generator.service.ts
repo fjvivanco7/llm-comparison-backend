@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenRouter } from '@openrouter/sdk';
-import { OllamaTestGeneratorService } from './ollama-test-generator.service';
 
 export interface IntelligentTestCase {
   input: any[];
@@ -21,17 +20,15 @@ export class TestGeneratorService {
   private readonly logger = new Logger(TestGeneratorService.name);
   private readonly client: OpenRouter;
 
-  constructor(
-    private configService: ConfigService,
-    private ollamaTestGenerator: OllamaTestGeneratorService) {
+  constructor(private configService: ConfigService) {
     const apiKey = this.configService.get<string>('OPENROUTER_API_KEY');
 
     if (!apiKey) {
-      this.logger.warn('⚠️  OPENROUTER_API_KEY no está configurado. Test cases con IA no funcionarán.');
+      throw new Error('⚠️  OPENROUTER_API_KEY es requerido');
     }
 
     this.client = new OpenRouter({ apiKey });
-    this.logger.log('✅ TestGeneratorService inicializado');
+    this.logger.log('✅ TestGeneratorService inicializado con OpenRouter');
   }
 
   /**
@@ -40,7 +37,6 @@ export class TestGeneratorService {
   async analyzeCodeExecutability(code: string): Promise<CodeAnalysis> {
     this.logger.log('🔍 Analizando ejecutabilidad del código...');
 
-    // Patrones de dependencias externas
     const externalPatterns = [
       { pattern: /require\s*\(['"](?!\.\/|\.\.\/)[^'"]+['"]\)/, name: 'require(npm)' },
       { pattern: /import\s+.*\s+from\s+['"](?!\.\/|\.\.\/)[^'"]+['"]/, name: 'ES6 imports' },
@@ -67,11 +63,8 @@ export class TestGeneratorService {
       }
     }
 
-    // Detectar nombres específicos de paquetes npm
     const npmPackages = this.extractNpmPackages(code);
     foundDependencies.push(...npmPackages);
-
-    // Eliminar duplicados
     const uniqueDependencies = [...new Set(foundDependencies)];
 
     const isExecutable = !hasExternalDependencies;
@@ -89,317 +82,213 @@ export class TestGeneratorService {
     };
   }
 
-  /**
-   * Extrae nombres de paquetes npm del código
-   */
   private extractNpmPackages(code: string): string[] {
     const packages: string[] = [];
-
-    // Buscar require('package-name')
     const requireMatches = code.matchAll(/require\s*\(['"]([^'"./][^'"]*)['"]\)/g);
     for (const match of requireMatches) {
       packages.push(match[1]);
     }
-
-    // Buscar import ... from 'package-name'
     const importMatches = code.matchAll(/import\s+.*\s+from\s+['"]([^'"./][^'"]+)['"]/g);
     for (const match of importMatches) {
       packages.push(match[1]);
     }
-
     return packages;
   }
 
-  // /**
-  //  * Genera test cases inteligentes usando IA (GPT-4)
-  //  */
-  // async generateIntelligentTestCases(code: string): Promise<IntelligentTestCase[]> {
-  //   this.logger.log('🤖 Generando test cases inteligentes con IA...');
-  //
-  //   try {
-  //     const prompt = this.buildPrompt(code);
-  //
-  //     const response = await this.client.chat.send(
-  //       {
-  //         model: 'openai/gpt-4',
-  //         messages: [
-  //           {
-  //             role: 'system',
-  //             content: 'Eres un experto en testing de software. Analiza código JavaScript y genera casos de prueba apropiados en formato JSON estricto.',
-  //           },
-  //           {
-  //             role: 'user',
-  //             content: prompt,
-  //           },
-  //         ],
-  //         temperature: 0.3,
-  //         maxTokens: 2000,
-  //         stream: false,
-  //       },
-  //       {
-  //         headers: {
-  //           'HTTP-Referer': 'http://localhost:3000',
-  //           'X-Title': 'LLM Comparison Tool',
-  //         },
-  //       }
-  //     );
-  //
-  //     const content = response.choices[0]?.message?.content;
-  //     const textContent = Array.isArray(content)
-  //       ? content.map((c) => (typeof c === 'string' ? c : c.type === 'text' ? c.text : '')).join('\n')
-  //       : (content || '');
-  //
-  //     if (!textContent) {
-  //       this.logger.warn('⚠️  IA no generó contenido, usando fallback');
-  //       return this.generateBasicFallback(code);
-  //     }
-  //
-  //     // Extraer y parsear JSON del response
-  //     const testCases = this.parseTestCasesFromResponse(textContent);
-  //
-  //     if (testCases.length === 0) {
-  //       this.logger.warn('⚠️  IA no generó test cases válidos, usando fallback');
-  //       return this.generateBasicFallback(code);
-  //     }
-  //
-  //     this.logger.log(`✅ ${testCases.length} test cases inteligentes generados`);
-  //     return testCases;
-  //
-  //   } catch (error) {
-  //     this.logger.error(`❌ Error generando test cases con IA: ${error.message}`);
-  //     this.logger.warn('🔄 Usando fallback básico');
-  //     return this.generateBasicFallback(code);
-  //   }
-  // }
-
+  /**
+   * Genera test cases usando OpenRouter (SIN FALLBACK)
+   */
   async generateIntelligentTestCases(code: string): Promise<IntelligentTestCase[]> {
-    this.logger.log('🤖 Generando test cases inteligentes...');
+    this.logger.log('🤖 Generando test cases con IA...');
 
-    // ✅ USAR OLLAMA LOCAL (GRATIS)
-    return await this.ollamaTestGenerator.generateTestCases(code);
+    const model = this.configService.get<string>(
+      'AI_TEST_MODEL',
+      'qwen/qwen-2.5-7b-instruct:free'  // ← MODELO GRATIS POR DEFECTO
+    );
+
+    const numTests = this.configService.get<number>('AI_TEST_CASES_COUNT', 5);
+
+    this.logger.log(`🎯 Modelo: ${model} | Test cases: ${numTests}`);
+
+    const prompt = this.buildPrompt(code, numTests);
+
+    // Retry logic: 3 intentos
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        this.logger.log(`🔄 Intento ${attempt}/3...`);
+
+        const response = await this.client.chat.send(
+          {
+            model,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are an expert software tester. Generate test cases in strict JSON format.',
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            temperature: 0.3,
+            maxTokens: 2000,
+          },
+          {
+            headers: {
+              'HTTP-Referer': 'http://localhost:3000',
+              'X-Title': 'LLM Comparison Tool',
+            },
+          }
+        );
+
+        const content = response.choices[0]?.message?.content;
+        const textContent = Array.isArray(content)
+          ? content.map((c) => (typeof c === 'string' ? c : c.type === 'text' ? c.text : '')).join('\n')
+          : (content || '');
+
+        if (!textContent) {
+          throw new Error('IA no generó contenido');
+        }
+
+        const testCases = this.parseTestCasesFromResponse(textContent);
+
+        if (testCases.length === 0) {
+          throw new Error('No se pudieron parsear test cases del JSON');
+        }
+
+        this.logger.log(`✅ ${testCases.length} test cases generados exitosamente`);
+        return testCases;
+
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(`⚠️  Intento ${attempt}/3 falló: ${error.message}`);
+
+        if (attempt < 3) {
+          // Esperar 2 segundos antes de reintentar
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    // Si llegamos aquí, fallaron los 3 intentos
+    throw new Error(
+      `No se pudieron generar test cases después de 3 intentos. Último error: ${lastError?.message}`
+    );
   }
 
-  /**
-   * Construye el prompt para la IA
-   */
-  private buildPrompt(code: string): string {
-    return `
-Analiza esta función JavaScript y genera 5 casos de prueba apropiados.
+  private buildPrompt(code: string, numTests: number): string {
+    return `You are a code analyzer. First UNDERSTAND what this code does, then generate ${numTests} test cases.
 
-**CÓDIGO A ANALIZAR:**
+CODE TO ANALYZE:
 \`\`\`javascript
 ${code}
 \`\`\`
 
-**INSTRUCCIONES:**
-1. Identifica el NOMBRE de la función
-2. Identifica los PARÁMETROS que espera
-3. Identifica el TIPO de dato que retorna
-4. Genera casos de prueba que cubran:
-   - Casos válidos (happy path)
-   - Casos edge (valores límite, vacíos)
-   - Casos inválidos
+STEP 1 - ANALYZE THE CODE:
+- What parameters does the function receive? (name and type of each)
+- What does the function return? (type and logic)
+- Execute the logic mentally for simple inputs
 
-**FORMATO DE RESPUESTA (JSON estricto):**
-\`\`\`json
-{
-  "testCases": [
-    {
-      "input": ["valor1", "valor2"],
-      "expectedOutput": resultado_esperado,
-      "description": "Descripción del caso"
-    }
-  ]
+STEP 2 - GENERATE TEST CASES:
+The "input" field is an ARRAY spread as arguments: targetFunction(...input)
+
+PARAMETER RULES:
+- Function with NO parameters: "input": []
+- Function with 1 number param: "input": [5]
+- Function with 1 array param: "input": [[1,2,3]] (wrapped in array)
+- Function with 1 string param: "input": ["hello"]
+- Function with 1 object param: "input": [{"key": "value"}]
+- Function with 2+ params: "input": [param1, param2, ...]
+
+EXPECTED OUTPUT RULES:
+- You MUST calculate what the function ACTUALLY returns for each input
+- Do NOT guess - trace the code logic step by step
+- If function returns boolean: true or false
+- If function returns number: the calculated number
+- If function returns array: the resulting array
+- If function returns string: the resulting string
+
+EXAMPLE - Analyzing a sum function:
+\`\`\`javascript
+function sumEvenNumbers(n) {
+  let sum = 0;
+  for (let i = 2; i <= n; i += 2) sum += i;
+  return sum;
 }
 \`\`\`
+Analysis: Receives 1 number, returns sum of even numbers from 2 to n
+- sumEvenNumbers(10) = 2+4+6+8+10 = 30
+- sumEvenNumbers(4) = 2+4 = 6
 
-**REGLAS IMPORTANTES:**
-- El "input" SIEMPRE debe ser un array de valores (los argumentos de la función)
-- El "expectedOutput" es el valor que la función debe retornar
-- Si la función recibe 1 argumento: "input": ["valor"]
-- Si la función recibe 2 argumentos: "input": ["valor1", "valor2"]
-- Si la función no recibe argumentos: "input": []
+Test cases:
+{"input": [10], "expectedOutput": 30, "description": "Sum evens 1-10"}
+{"input": [4], "expectedOutput": 6, "description": "Sum evens 1-4"}
 
-**EJEMPLOS:**
+NOW generate ${numTests} test cases for the code above.
 
-**Ejemplo 1:** \`function sumar(a, b) { return a + b; }\`
-\`\`\`json
+RESPOND ONLY WITH JSON:
 {
   "testCases": [
-    { "input": [2, 3], "expectedOutput": 5, "description": "Suma de números positivos" },
-    { "input": [0, 0], "expectedOutput": 0, "description": "Suma de ceros" },
-    { "input": [-5, 5], "expectedOutput": 0, "description": "Suma con negativos" },
-    { "input": [1.5, 2.5], "expectedOutput": 4, "description": "Suma con decimales" },
-    { "input": [1000, 2000], "expectedOutput": 3000, "description": "Números grandes" }
+    {"input": [...], "expectedOutput": ..., "description": "..."}
   ]
-}
-\`\`\`
-
-**Ejemplo 2:** \`function validarEmail(email) { return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email); }\`
-\`\`\`json
-{
-  "testCases": [
-    { "input": ["test@example.com"], "expectedOutput": true, "description": "Email válido" },
-    { "input": ["invalid.email"], "expectedOutput": false, "description": "Sin @" },
-    { "input": ["test@"], "expectedOutput": false, "description": "Sin dominio" },
-    { "input": ["@example.com"], "expectedOutput": false, "description": "Sin usuario" },
-    { "input": ["test@example"], "expectedOutput": false, "description": "Sin TLD" }
-  ]
-}
-\`\`\`
-
-**Ejemplo 3:** \`function ordenarArray(arr) { return arr.sort((a, b) => a - b); }\`
-\`\`\`json
-{
-  "testCases": [
-    { "input": [[3, 1, 2]], "expectedOutput": [1, 2, 3], "description": "Array desordenado" },
-    { "input": [[]], "expectedOutput": [], "description": "Array vacío" },
-    { "input": [[5]], "expectedOutput": [5], "description": "Un elemento" },
-    { "input": [[1, 1, 1]], "expectedOutput": [1, 1, 1], "description": "Elementos iguales" },
-    { "input": [[-3, -1, -2]], "expectedOutput": [-3, -2, -1], "description": "Números negativos" }
-  ]
-}
-\`\`\`
-
-**GENERA LOS TEST CASES AHORA (SOLO JSON, sin explicaciones adicionales):**
-`;
+}`;
   }
 
-  /**
-   * Parsea la respuesta de la IA para extraer test cases
-   */
   private parseTestCasesFromResponse(response: string): IntelligentTestCase[] {
     try {
-      // Intentar extraer JSON del markdown
-      const jsonMatch = response.match(/```json\s*([\s\S]*?)\s*```/);
-      let jsonString = jsonMatch ? jsonMatch[1] : response;
+      this.logger.log('📝 Parseando respuesta de IA...');
 
-      // Si no hay markdown, intentar extraer JSON directo
+      let cleanResponse = response.trim();
+
+      // Remover markdown
+      cleanResponse = cleanResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+
+      // Reemplazar undefined con null (JSON válido)
+      cleanResponse = cleanResponse.replace(/:\s*undefined\b/g, ': null');
+      cleanResponse = cleanResponse.replace(/\[\s*undefined\b/g, '[null');
+      cleanResponse = cleanResponse.replace(/,\s*undefined\b/g, ', null');
+
+      // Buscar JSON
+      const jsonMatch = cleanResponse.match(/\{[\s\S]*"testCases"[\s\S]*\}/);
+
       if (!jsonMatch) {
-        const directJsonMatch = response.match(/\{[\s\S]*"testCases"[\s\S]*\}/);
-        if (directJsonMatch) {
-          jsonString = directJsonMatch[0];
+        this.logger.error('⚠️  No se encontró JSON en la respuesta');
+        this.logger.debug(`Respuesta recibida: ${response.substring(0, 500)}`);
+        throw new Error('No se encontró JSON válido en la respuesta');
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      if (!parsed.testCases || !Array.isArray(parsed.testCases)) {
+        throw new Error('JSON no tiene el formato esperado');
+      }
+
+      const testCases = parsed.testCases.map((tc: any) => {
+        let inputArray: any[];
+
+        if (Array.isArray(tc.input)) {
+          inputArray = tc.input;
+        } else if (typeof tc.input === 'object' && tc.input !== null) {
+          inputArray = Object.values(tc.input);
+        } else {
+          inputArray = [tc.input];
         }
-      }
 
-      const parsed = JSON.parse(jsonString);
+        return {
+          input: inputArray,
+          expectedOutput: tc.expectedOutput !== undefined ? tc.expectedOutput : (tc.output !== undefined ? tc.output : null),
+          description: tc.description || tc.name || 'Test case',
+        };
+      });
 
-      if (parsed.testCases && Array.isArray(parsed.testCases)) {
-        return parsed.testCases.map((tc: any) => ({
-          input: Array.isArray(tc.input) ? tc.input : [tc.input],
-          expectedOutput: tc.expectedOutput,
-          description: tc.description || 'Test case',
-        }));
-      }
-
-      this.logger.warn('⚠️  Formato de respuesta inesperado de IA');
-      return [];
+      this.logger.log(`✅ Parseados ${testCases.length} test cases correctamente`);
+      return testCases;
 
     } catch (error) {
-      this.logger.error(`❌ Error parseando respuesta de IA: ${error.message}`);
-      return [];
+      this.logger.error(`❌ Error parseando respuesta: ${error.message}`);
+      throw error;
     }
-  }
-
-  /**
-   * Genera test cases básicos como fallback (sin IA)
-   */
-  private generateBasicFallback(code: string): IntelligentTestCase[] {
-    this.logger.warn('🔄 Generando test cases básicos (fallback sin IA)');
-
-    // Detectar tipo de función por palabras clave
-    if (this.isEmailValidation(code)) {
-      return this.getEmailTestCases();
-    }
-
-    if (this.isArrayOperation(code)) {
-      return this.getArrayTestCases();
-    }
-
-    if (this.isStringOperation(code)) {
-      return this.getStringTestCases();
-    }
-
-    if (this.isNumericOperation(code)) {
-      return this.getNumericTestCases();
-    }
-
-    // Fallback genérico
-    this.logger.warn('⚠️  No se pudo determinar tipo de función, usando tests genéricos');
-    return this.getGenericTestCases();
-  }
-
-  // ========================================
-  // HELPERS PARA DETECTAR TIPOS DE FUNCIÓN
-  // ========================================
-
-  private isEmailValidation(code: string): boolean {
-    return /email|mail|@|^\w+@/.test(code.toLowerCase());
-  }
-
-  private isArrayOperation(code: string): boolean {
-    return /array|arr\[|\.sort|\.filter|\.map|\.reduce/.test(code.toLowerCase());
-  }
-
-  private isStringOperation(code: string): boolean {
-    return /string|str\.|\.toUpperCase|\.toLowerCase|\.trim|\.split/.test(code);
-  }
-
-  private isNumericOperation(code: string): boolean {
-    return /number|num|sum|add|multiply|divide|calculate|math\./i.test(code);
-  }
-
-  // ========================================
-  // TEST CASES POR TIPO
-  // ========================================
-
-  private getEmailTestCases(): IntelligentTestCase[] {
-    return [
-      { input: ['test@example.com'], expectedOutput: true, description: 'Email válido' },
-      { input: ['invalid.email'], expectedOutput: false, description: 'Sin @' },
-      { input: ['test@'], expectedOutput: false, description: 'Sin dominio' },
-      { input: ['@example.com'], expectedOutput: false, description: 'Sin usuario' },
-      { input: [''], expectedOutput: false, description: 'String vacío' },
-    ];
-  }
-
-  private getArrayTestCases(): IntelligentTestCase[] {
-    return [
-      { input: [[3, 1, 2]], expectedOutput: [1, 2, 3], description: 'Array desordenado' },
-      { input: [[]], expectedOutput: [], description: 'Array vacío' },
-      { input: [[5]], expectedOutput: [5], description: 'Un elemento' },
-      { input: [[1, 1, 1]], expectedOutput: [1, 1, 1], description: 'Elementos duplicados' },
-      { input: [[-3, -1, -2]], expectedOutput: [-3, -2, -1], description: 'Números negativos' },
-    ];
-  }
-
-  private getStringTestCases(): IntelligentTestCase[] {
-    return [
-      { input: ['hello'], expectedOutput: 'HELLO', description: 'String normal' },
-      { input: [''], expectedOutput: '', description: 'String vacío' },
-      { input: ['Test123'], expectedOutput: 'TEST123', description: 'Con números' },
-      { input: ['  spaces  '], expectedOutput: '  SPACES  ', description: 'Con espacios' },
-      { input: ['!@#$'], expectedOutput: '!@#$', description: 'Caracteres especiales' },
-    ];
-  }
-
-  private getNumericTestCases(): IntelligentTestCase[] {
-    return [
-      { input: [5, 3], expectedOutput: 8, description: 'Números positivos' },
-      { input: [0, 0], expectedOutput: 0, description: 'Ceros' },
-      { input: [-5, 5], expectedOutput: 0, description: 'Con negativos' },
-      { input: [1.5, 2.5], expectedOutput: 4, description: 'Decimales' },
-      { input: [1000, 2000], expectedOutput: 3000, description: 'Números grandes' },
-    ];
-  }
-
-  private getGenericTestCases(): IntelligentTestCase[] {
-    return [
-      { input: [1], expectedOutput: 1, description: 'Test genérico - número' },
-      { input: ['test'], expectedOutput: 'test', description: 'Test genérico - string' },
-      { input: [[1, 2]], expectedOutput: [1, 2], description: 'Test genérico - array' },
-      { input: [true], expectedOutput: true, description: 'Test genérico - boolean' },
-      { input: [null], expectedOutput: null, description: 'Test genérico - null' },
-    ];
   }
 }

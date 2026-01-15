@@ -47,9 +47,46 @@ model User {
 
   // Relaciones
   queries UserQuery[]
-  qualitativeEvaluations QualitativeEvaluation[] // ← SOLO AGREGAR ESTA LÍNEA
+  qualitativeEvaluations QualitativeEvaluation[]
+  sessions UserSession[]
+  preferences UserPreferences?
 
   @@map("users")
+}
+
+// ============================================
+// SESIONES DE USUARIO (para logout en todos los dispositivos)
+// ============================================
+model UserSession {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  token        String   @unique
+  deviceInfo   String?  // "Chrome en Windows", "Safari en iPhone", etc.
+  ipAddress    String?
+  lastActivity DateTime @default(now())
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+// ============================================
+// PREFERENCIAS DE USUARIO
+// ============================================
+model UserPreferences {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique
+  promptFontSize  Int      @default(14)    // Tamaño de fuente para prompts
+  promptFontFamily String  @default("mono") // mono, sans, serif
+  theme           String   @default("dark") // dark, light, system
+  language        String   @default("es")   // es, en
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
 }
 
 // MODELO 1: Consultas/Prompts de usuarios

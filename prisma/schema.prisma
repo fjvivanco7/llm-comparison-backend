@@ -41,6 +41,11 @@ model User {
   passwordResetToken String? @unique
   passwordResetExpires DateTime?
 
+  // 2FA (Two-Factor Authentication)
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+  twoFactorBackupCodes String[] // Códigos de respaldo
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   lastLoginAt DateTime?
@@ -221,9 +226,22 @@ model QualitativeEvaluation {
 
   // Relaciones
   code              GeneratedCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
-  evaluator         User          @relation(fields: [evaluatorId], references: [id])
+  evaluator         User          @relation(fields: [evaluatorId], references: [id], onDelete: Cascade)
 
   // Un evaluador solo puede evaluar un código una vez
   @@unique([codeId, evaluatorId])
   @@map("qualitative_evaluations")
+}
+
+// ============================================
+// CONFIGURACIÓN DE LA APLICACIÓN
+// ============================================
+model AppSettings {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("app_settings")
 }

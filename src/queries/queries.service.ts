@@ -15,7 +15,17 @@ export class QueriesService {
     private readonly llmService: LlmService,
   ) {}
 
-  private readonly DAILY_QUERY_LIMIT = 10;
+  private readonly DEFAULT_DAILY_LIMIT = 10;
+
+  /**
+   * Obtiene el límite diario de consultas desde la configuración
+   */
+  private async getDailyQueryLimit(): Promise<number> {
+    const setting = await this.prisma.appSettings.findUnique({
+      where: { key: 'dailyQueryLimit' },
+    });
+    return setting ? parseInt(setting.value, 10) : this.DEFAULT_DAILY_LIMIT;
+  }
 
   /**
    * Cuenta las consultas del usuario en el día actual
@@ -37,7 +47,8 @@ export class QueriesService {
       },
     });
 
-    this.logger.log(`📊 Usuario ${userId}: ${count}/${this.DAILY_QUERY_LIMIT} consultas hoy`);
+    const limit = await this.getDailyQueryLimit();
+    this.logger.log(`📊 Usuario ${userId}: ${count}/${limit} consultas hoy`);
     return count;
   }
 
@@ -45,11 +56,14 @@ export class QueriesService {
    * Obtiene las consultas restantes del día para el usuario
    */
   async getRemainingQueries(userId: number): Promise<{ used: number; limit: number; remaining: number }> {
-    const used = await this.getDailyQueryCount(userId);
+    const [used, limit] = await Promise.all([
+      this.getDailyQueryCount(userId),
+      this.getDailyQueryLimit(),
+    ]);
     return {
       used,
-      limit: this.DAILY_QUERY_LIMIT,
-      remaining: Math.max(0, this.DAILY_QUERY_LIMIT - used),
+      limit,
+      remaining: Math.max(0, limit - used),
     };
   }
 
@@ -64,10 +78,13 @@ export class QueriesService {
 
     try {
       // 0. Verificar límite diario de consultas
-      const todayQueries = await this.getDailyQueryCount(userId);
-      if (todayQueries >= this.DAILY_QUERY_LIMIT) {
+      const [todayQueries, dailyLimit] = await Promise.all([
+        this.getDailyQueryCount(userId),
+        this.getDailyQueryLimit(),
+      ]);
+      if (todayQueries >= dailyLimit) {
         throw new BadRequestException(
-          `Has alcanzado el límite de ${this.DAILY_QUERY_LIMIT} consultas por día. Intenta mañana.`,
+          `Has alcanzado el límite de ${dailyLimit} consultas por día. Intenta mañana.`,
         );
       }
 
@@ -136,20 +153,54 @@ export class QueriesService {
   }
 
   /**
-   * Obtiene todas las consultas del usuario
+   * Obtiene todas las consultas del usuario con paginación
    */
-  async findAll(userId: number): Promise<QueryResponseDto[]> {
-    const queries = await this.prisma.userQuery.findMany({
-      where: { userId }, // ← Filtrar por usuario
-      include: {
-        generatedCodes: true,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+  async findAll(
+    userId: number,
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<{
+    data: QueryResponseDto[];
+    meta: {
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
+  }> {
+    const skip = (page - 1) * limit;
 
-    return queries.map((query) => this.mapToResponseDto(query));
+    // Obtener total y datos en paralelo
+    const [total, queries] = await Promise.all([
+      this.prisma.userQuery.count({ where: { userId } }),
+      this.prisma.userQuery.findMany({
+        where: { userId },
+        include: {
+          generatedCodes: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data: queries.map((query) => this.mapToResponseDto(query)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 
   /**

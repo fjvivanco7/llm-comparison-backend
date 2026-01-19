@@ -9,6 +9,8 @@ import { ComparisonModule } from './comparison/comparison.module';
 import { AuthModule } from './auth/auth.module';
 import { EmailModule } from './email/email.module';
 import { EvaluationModule } from './evaluation/evaluation.module';
+import { UsersModule } from './users/users.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -25,11 +27,13 @@ import { EvaluationModule } from './evaluation/evaluation.module';
     PrismaModule,
     EmailModule,
     AuthModule,
+    UsersModule,
     LlmModule,
     QueriesModule,
     AnalysisModule,
     ComparisonModule,
-    EvaluationModule
+    EvaluationModule,
+    AdminModule,
   ],
   controllers: [],
   providers: [],

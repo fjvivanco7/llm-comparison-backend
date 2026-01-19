@@ -95,7 +95,7 @@ export class AuthService {
   /**
    * Login de usuario
    */
-  async login(dto: LoginDto): Promise<AuthResponseDto> {
+  async login(dto: LoginDto, deviceInfo?: string, ipAddress?: string): Promise<any> {
     this.logger.log(`Intento de login: ${dto.email}`);
 
     // Buscar usuario
@@ -107,7 +107,7 @@ export class AuthService {
       this.logger.warn(
         `⚠️ SEGURIDAD: Intento de login con email inexistente: ${dto.email}`,
       );
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new UnauthorizedException('No existe una cuenta con este correo electrónico');
     }
 
     // Verificar contraseña
@@ -117,7 +117,7 @@ export class AuthService {
       this.logger.warn(
         `⚠️ SEGURIDAD: Intento de login con contraseña incorrecta para: ${dto.email}`,
       );
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new UnauthorizedException('Contraseña incorrecta');
     }
 
     if (!user.isEmailVerified) {
@@ -129,6 +129,129 @@ export class AuthService {
       );
     }
 
+    // ==================== 2FA CHECK ====================
+    if (user.twoFactorEnabled) {
+      // Generar token temporal (corta duración, solo para 2FA)
+      const tempToken = this.jwtService.sign(
+        { sub: user.id, email: user.email, type: '2fa-pending' },
+        { expiresIn: '5m' } // 5 minutos para completar 2FA
+      );
+
+      this.logger.log(`2FA requerido para: ${user.email}`);
+
+      return {
+        requiresTwoFactor: true,
+        tempToken,
+        message: 'Se requiere verificación de dos factores',
+      };
+    }
+    // ==================== FIN 2FA CHECK ====================
+
+    // Si no tiene 2FA, login normal
+    return this.completeLogin(user, deviceInfo, ipAddress);
+  }
+
+  /**
+   * Completar login después de verificar 2FA
+   */
+  async verify2FALogin(tempToken: string, code: string, deviceInfo?: string, ipAddress?: string): Promise<AuthResponseDto> {
+    try {
+      // Verificar token temporal
+      const payload = this.jwtService.verify(tempToken);
+
+      if (payload.type !== '2fa-pending') {
+        throw new UnauthorizedException('Token inválido');
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+      });
+
+      if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+        throw new UnauthorizedException('Usuario no válido');
+      }
+
+      // Importar y usar el servicio de 2FA
+      const { authenticator } = await import('@otplib/preset-default');
+
+      // Verificar código TOTP
+      const isValidTotp = authenticator.verify({
+        token: code,
+        secret: user.twoFactorSecret,
+      });
+
+      // Si no es TOTP válido, verificar si es código de respaldo
+      if (!isValidTotp) {
+        const backupCodeIndex = user.twoFactorBackupCodes.indexOf(code);
+        if (backupCodeIndex === -1) {
+          throw new UnauthorizedException('Código 2FA inválido');
+        }
+
+        // Eliminar código de respaldo usado
+        const updatedCodes = [...user.twoFactorBackupCodes];
+        updatedCodes.splice(backupCodeIndex, 1);
+
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { twoFactorBackupCodes: updatedCodes },
+        });
+
+        this.logger.log(`Código de respaldo usado para: ${user.email}`);
+      }
+
+      this.logger.log(`✅ 2FA verificado para: ${user.email}`);
+
+      // Completar login
+      return this.completeLogin(user, deviceInfo, ipAddress);
+    } catch (error) {
+      if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+        throw new UnauthorizedException('Token temporal expirado. Inicia sesión de nuevo.');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Completar login (crear sesión y retornar token)
+   */
+  private async completeLogin(user: any, deviceInfo?: string, ipAddress?: string): Promise<AuthResponseDto> {
+    // Generar token
+    const authResponse = this.generateAuthResponse(user);
+
+    // Buscar sesión existente del mismo dispositivo
+    const existingSession = await this.prisma.userSession.findFirst({
+      where: {
+        userId: user.id,
+        deviceInfo: deviceInfo || 'Unknown Device',
+      },
+    });
+
+    if (existingSession) {
+      // Actualizar sesión existente con nuevo token
+      await this.prisma.userSession.update({
+        where: { id: existingSession.id },
+        data: {
+          token: authResponse.accessToken,
+          ipAddress: ipAddress || 'Unknown',
+          lastActivity: new Date(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 horas
+        },
+      });
+      this.logger.log(`Sesión actualizada para dispositivo: ${deviceInfo}`);
+    } else {
+      // Crear nueva sesión solo si no existe una para este dispositivo
+      await this.prisma.userSession.create({
+        data: {
+          userId: user.id,
+          token: authResponse.accessToken,
+          deviceInfo: deviceInfo || 'Unknown Device',
+          ipAddress: ipAddress || 'Unknown',
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 horas
+        },
+      });
+      this.logger.log(`Nueva sesión creada para dispositivo: ${deviceInfo}`);
+    }
+
     // Actualizar último login
     await this.prisma.user.update({
       where: { id: user.id },
@@ -137,8 +260,7 @@ export class AuthService {
 
     this.logger.log(`✅ Login exitoso: ${user.email}`);
 
-    // Generar token
-    return this.generateAuthResponse(user);
+    return authResponse;
   }
 
   /**

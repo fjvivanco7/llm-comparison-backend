@@ -230,45 +230,54 @@ export class UsersService {
   async getUsageStats(userId: number) {
     this.logger.log(`Obteniendo estadísticas de uso para usuario ${userId}`);
 
-    // Total de consultas
-    const totalQueries = await this.prisma.userQuery.count({
-      where: { userId },
+    // Obtener usuario y su rol
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, createdAt: true },
     });
 
-    // Consultas por día (últimos 30 días)
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const memberSinceDays = Math.floor(
+      (Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    // Si es evaluador, retornar estadísticas de evaluador
+    if (user.role === 'EVALUATOR' || user.role === 'ADMIN') {
+      return this.getEvaluatorUsageStats(userId, memberSinceDays);
+    }
+
+    // Estadísticas para developers (USER)
+    return this.getDeveloperUsageStats(userId, memberSinceDays);
+  }
+
+  /**
+   * Estadísticas para Developers (USER)
+   */
+  private async getDeveloperUsageStats(userId: number, memberSinceDays: number) {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const queriesLast30Days = await this.prisma.userQuery.count({
-      where: {
-        userId,
-        createdAt: { gte: thirtyDaysAgo },
-      },
-    });
-
-    // Consultas hoy
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const queriesToday = await this.prisma.userQuery.count({
-      where: {
-        userId,
-        createdAt: { gte: today },
-      },
-    });
 
-    // Límite diario
+    // Consultas
+    const [totalQueries, queriesLast30Days, queriesToday] = await Promise.all([
+      this.prisma.userQuery.count({ where: { userId } }),
+      this.prisma.userQuery.count({ where: { userId, createdAt: { gte: thirtyDaysAgo } } }),
+      this.prisma.userQuery.count({ where: { userId, createdAt: { gte: today } } }),
+    ]);
+
     const dailyLimit = 10;
     const remainingToday = Math.max(0, dailyLimit - queriesToday);
 
-    // Total de códigos generados
-    const totalCodes = await this.prisma.generatedCode.count({
-      where: { query: { userId } },
-    });
-
-    // Total de análisis completados
-    const totalAnalyses = await this.prisma.codeMetrics.count({
-      where: { code: { query: { userId } } },
-    });
+    // Códigos y análisis
+    const [totalCodes, totalAnalyses] = await Promise.all([
+      this.prisma.generatedCode.count({ where: { query: { userId } } }),
+      this.prisma.codeMetrics.count({ where: { code: { query: { userId } } } }),
+    ]);
 
     // Modelos más usados
     const modelUsage = await this.prisma.generatedCode.groupBy({
@@ -279,14 +288,7 @@ export class UsersService {
       take: 5,
     });
 
-    // Score promedio por modelo
-    const avgScoresByModel = await this.prisma.codeMetrics.groupBy({
-      by: ['codeId'],
-      where: { code: { query: { userId } } },
-      _avg: { totalScore: true },
-    });
-
-    // Actividad por día de la semana
+    // Actividad por día
     const queriesByDay = await this.prisma.$queryRaw<{ day: number; count: bigint }[]>`
       SELECT EXTRACT(DOW FROM "createdAt") as day, COUNT(*) as count
       FROM user_queries
@@ -301,17 +303,8 @@ export class UsersService {
       return { day: name, count: found ? Number(found.count) : 0 };
     });
 
-    // Fecha de registro
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { createdAt: true },
-    });
-
-    const memberSinceDays = user
-      ? Math.floor((Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24))
-      : 0;
-
     return {
+      type: 'developer',
       summary: {
         totalQueries,
         totalCodes,
@@ -331,8 +324,98 @@ export class UsersService {
       modelUsage: modelUsage.map(m => ({
         model: m.llmName,
         count: m._count.llmName,
-        percentage: Math.round((m._count.llmName / totalCodes) * 100),
+        percentage: totalCodes > 0 ? Math.round((m._count.llmName / totalCodes) * 100) : 0,
       })),
+      activityByDay,
+    };
+  }
+
+  /**
+   * Estadísticas para Evaluadores
+   */
+  private async getEvaluatorUsageStats(userId: number, memberSinceDays: number) {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Evaluaciones realizadas
+    const [totalEvaluations, evaluationsLast30Days, evaluationsToday] = await Promise.all([
+      this.prisma.qualitativeEvaluation.count({ where: { evaluatorId: userId } }),
+      this.prisma.qualitativeEvaluation.count({
+        where: { evaluatorId: userId, evaluatedAt: { gte: thirtyDaysAgo } }
+      }),
+      this.prisma.qualitativeEvaluation.count({
+        where: { evaluatorId: userId, evaluatedAt: { gte: today } }
+      }),
+    ]);
+
+    // Códigos pendientes de evaluar (códigos que no han sido evaluados por este evaluador)
+    const pendingCodes = await this.prisma.generatedCode.count({
+      where: {
+        qualitativeEvaluations: {
+          none: { evaluatorId: userId },
+        },
+        metrics: { isNot: null }, // Solo códigos que ya tienen métricas
+      },
+    });
+
+    // Promedio de scores dados
+    const avgScores = await this.prisma.qualitativeEvaluation.aggregate({
+      where: { evaluatorId: userId },
+      _avg: {
+        readabilityScore: true,
+        clarityScore: true,
+        structureScore: true,
+        documentationScore: true,
+        totalScore: true,
+      },
+    });
+
+    // Distribución de scores
+    const scoreDistribution = await this.prisma.qualitativeEvaluation.groupBy({
+      by: ['totalScore'],
+      where: { evaluatorId: userId },
+      _count: { totalScore: true },
+    });
+
+    // Actividad por día
+    const evaluationsByDay = await this.prisma.$queryRaw<{ day: number; count: bigint }[]>`
+      SELECT EXTRACT(DOW FROM "evaluatedAt") as day, COUNT(*) as count
+      FROM qualitative_evaluations
+      WHERE "evaluatorId" = ${userId}
+      GROUP BY EXTRACT(DOW FROM "evaluatedAt")
+      ORDER BY day
+    `;
+
+    const daysOfWeek = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const activityByDay = daysOfWeek.map((name, index) => {
+      const found = evaluationsByDay.find(q => Number(q.day) === index);
+      return { day: name, count: found ? Number(found.count) : 0 };
+    });
+
+    return {
+      type: 'evaluator',
+      summary: {
+        totalEvaluations,
+        pendingCodes,
+        memberSinceDays,
+      },
+      today: {
+        evaluations: evaluationsToday,
+      },
+      last30Days: {
+        evaluations: evaluationsLast30Days,
+        averagePerDay: Math.round((evaluationsLast30Days / 30) * 10) / 10,
+      },
+      averageScores: {
+        readability: Math.round((avgScores._avg.readabilityScore || 0) * 10) / 10,
+        clarity: Math.round((avgScores._avg.clarityScore || 0) * 10) / 10,
+        structure: Math.round((avgScores._avg.structureScore || 0) * 10) / 10,
+        documentation: Math.round((avgScores._avg.documentationScore || 0) * 10) / 10,
+        overall: Math.round((avgScores._avg.totalScore || 0) * 10) / 10,
+      },
       activityByDay,
     };
   }

@@ -8,9 +8,11 @@ import {
   HttpCode,
   HttpStatus,
   ParseIntPipe,
-  UseGuards, Req,
+  UseGuards,
+  Req,
+  Query,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { QueriesService } from './queries.service';
 import { CreateQueryDto } from './dto/create-query.dto';
 import { QueryResponseDto } from './dto/query-response.dto';
@@ -56,25 +58,32 @@ export class QueriesController {
   }
 
   /**
-   * Obtener todas las consultas del usuario autenticado
+   * Obtener todas las consultas del usuario autenticado con paginación
    */
   @Get()
   @ApiOperation({
     summary: 'Listar mis consultas',
     description:
-      'Obtiene el historial completo de consultas del usuario autenticado',
+      'Obtiene el historial de consultas del usuario autenticado con paginación',
   })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Número de página (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Elementos por página (default: 10, max: 50)' })
   @ApiResponse({
     status: 200,
-    description: 'Lista de consultas',
-    type: [QueryResponseDto],
+    description: 'Lista de consultas paginada',
   })
   @ApiResponse({
     status: 401,
     description: 'No autenticado',
   })
-  async findAll(@CurrentUser() user: any): Promise<QueryResponseDto[]> {
-    return await this.queriesService.findAll(user.id);
+  async findAll(
+    @CurrentUser() user: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit || '10', 10) || 10));
+    return await this.queriesService.findAll(user.id, pageNum, limitNum);
   }
 
   /**

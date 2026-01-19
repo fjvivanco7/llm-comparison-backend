@@ -7,20 +7,26 @@ import {
   Get,
   UseGuards,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { VerifyTwoFactorDto, DisableTwoFactorDto, TwoFactorLoginDto } from './dto/two-factor.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly twoFactorService: TwoFactorService,
+  ) {}
 
   /**
    * Registro de nuevo usuario
@@ -72,8 +78,10 @@ export class AuthController {
     status: 429,
     description: 'Demasiados intentos de login, intenta en 15 minutos',
   })
-  async login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
-    return await this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Req() req: any): Promise<AuthResponseDto> {
+    const deviceInfo = req.headers['user-agent'] || 'Unknown Device';
+    const ipAddress = req.ip || req.headers['x-forwarded-for']?.toString() || 'Unknown';
+    return await this.authService.login(dto, deviceInfo, ipAddress);
   }
 
   /**
@@ -201,5 +209,111 @@ export class AuthController {
   })
   async resetPassword(@Body() body: { token: string; newPassword: string }) {
     return await this.authService.resetPassword(body.token, body.newPassword);
+  }
+
+  // ============================================
+  // 2FA ENDPOINTS
+  // ============================================
+
+  /**
+   * Generar QR code para activar 2FA
+   */
+  @Post('2fa/setup')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Configurar 2FA',
+    description: 'Genera el código QR y secreto para configurar la autenticación de dos factores',
+  })
+  @ApiResponse({ status: 200, description: 'QR code generado' })
+  @ApiResponse({ status: 400, description: '2FA ya está activado' })
+  async setup2FA(@CurrentUser() user: any) {
+    return await this.twoFactorService.generateSetup(user.id);
+  }
+
+  /**
+   * Verificar código y activar 2FA
+   */
+  @Post('2fa/enable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Activar 2FA',
+    description: 'Verifica el código del autenticador y activa 2FA',
+  })
+  @ApiResponse({ status: 200, description: '2FA activado, retorna códigos de respaldo' })
+  @ApiResponse({ status: 400, description: 'Código inválido' })
+  async enable2FA(@CurrentUser() user: any, @Body() dto: VerifyTwoFactorDto) {
+    return await this.twoFactorService.verifyAndEnable(user.id, dto.code);
+  }
+
+  /**
+   * Desactivar 2FA
+   */
+  @Post('2fa/disable')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Desactivar 2FA',
+    description: 'Desactiva la autenticación de dos factores',
+  })
+  @ApiResponse({ status: 200, description: '2FA desactivado' })
+  @ApiResponse({ status: 401, description: 'Código 2FA inválido' })
+  async disable2FA(@CurrentUser() user: any, @Body() dto: DisableTwoFactorDto) {
+    return await this.twoFactorService.disable(user.id, dto.password, dto.code);
+  }
+
+  /**
+   * Regenerar códigos de respaldo
+   */
+  @Post('2fa/backup-codes')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Regenerar códigos de respaldo',
+    description: 'Genera nuevos códigos de respaldo (invalida los anteriores)',
+  })
+  @ApiResponse({ status: 200, description: 'Nuevos códigos de respaldo generados' })
+  @ApiResponse({ status: 401, description: 'Código 2FA inválido' })
+  async regenerateBackupCodes(@CurrentUser() user: any, @Body() dto: VerifyTwoFactorDto) {
+    return await this.twoFactorService.regenerateBackupCodes(user.id, dto.code);
+  }
+
+  /**
+   * Verificar 2FA durante login (segundo paso)
+   */
+  @Post('2fa/verify')
+  @Throttle({ default: { limit: 5, ttl: 900000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Verificar código 2FA',
+    description: 'Segundo paso del login cuando 2FA está activado',
+  })
+  @ApiResponse({ status: 200, description: 'Login completado', type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'Código 2FA inválido' })
+  async verify2FALogin(@Body() dto: TwoFactorLoginDto, @Req() req: any) {
+    const deviceInfo = req.headers['user-agent'] || 'Unknown Device';
+    const ipAddress = req.ip || req.headers['x-forwarded-for']?.toString() || 'Unknown';
+    return await this.authService.verify2FALogin(dto.tempToken, dto.code, deviceInfo, ipAddress);
+  }
+
+  /**
+   * Verificar estado de 2FA del usuario
+   */
+  @Get('2fa/status')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Estado de 2FA',
+    description: 'Verifica si el usuario tiene 2FA activado',
+  })
+  @ApiResponse({ status: 200, description: 'Estado de 2FA' })
+  async get2FAStatus(@CurrentUser() user: any) {
+    const enabled = await this.twoFactorService.is2FAEnabled(user.id);
+    return { twoFactorEnabled: enabled };
   }
 }

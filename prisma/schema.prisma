@@ -206,14 +206,24 @@ model QualitativeEvaluation {
   codeId            Int
   evaluatorId       Int
 
-  // Criterios de evaluación (escala 1-5)
+  // Criterios de evaluación ORIGINALES (escala 1-5)
   readabilityScore  Int      // Legibilidad
   clarityScore      Int      // Claridad
   structureScore    Int      // Estructura
   documentationScore Int     // Documentación
 
+  // Criterios de evaluación NUEVOS (escala 1-5)
+  functionalityScore   Int?     // Correctitud funcional
+  efficiencyScore      Int?     // Eficiencia/Rendimiento
+  errorHandlingScore   Int?     // Manejo de errores
+  bestPracticesScore   Int?     // Buenas prácticas
+  securityScore        Int?     // Seguridad
+
   // Score total (promedio)
   totalScore        Float
+
+  // Tags de problemas encontrados
+  problemTags       String[] @default([])  // ["has_bugs", "redundant_code", "security_issue", etc.]
 
   // Comentarios del evaluador
   generalComments   String?  @db.Text
@@ -231,6 +241,29 @@ model QualitativeEvaluation {
   // Un evaluador solo puede evaluar un código una vez
   @@unique([codeId, evaluatorId])
   @@map("qualitative_evaluations")
+}
+
+// ============================================
+// EVALUACIÓN COMPARATIVA (Side-by-Side)
+// ============================================
+model ComparativeEvaluation {
+  id            Int      @id @default(autoincrement())
+  queryId       Int      // La consulta que se está evaluando
+  evaluatorId   Int
+
+  // Rankings de los códigos (JSON: [{codeId: 1, rank: 1}, {codeId: 2, rank: 2}])
+  rankings      Json
+
+  // Ganador de la comparación
+  winnerId      Int?     // ID del código ganador
+
+  // Justificación de la comparación
+  comparisonNotes String? @db.Text
+
+  evaluatedAt   DateTime @default(now())
+
+  @@unique([queryId, evaluatorId])
+  @@map("comparative_evaluations")
 }
 
 // ============================================

@@ -322,6 +322,7 @@ export class QueriesService {
           clarityComments: evaluation.clarityComments,
           structureComments: evaluation.structureComments,
           documentationComments: evaluation.documentationComments,
+          problemTags: evaluation.problemTags || [],
           evaluatedAt: evaluation.evaluatedAt,
         })) || [],
       })),
@@ -341,6 +342,14 @@ export class QueriesService {
             userId: true,
             userPrompt: true,
             createdAt: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
           },
         },
         metrics: true,
@@ -369,7 +378,14 @@ export class QueriesService {
       throw new ForbiddenException('No tienes permiso para ver este código');
     }
 
-    return code;
+    // Agregar developerName al objeto de retorno
+    return {
+      ...code,
+      developerName: code.query.user.firstName && code.query.user.lastName
+        ? `${code.query.user.firstName} ${code.query.user.lastName}`
+        : code.query.user.email,
+      developerId: code.query.user.id,
+    };
   }
 
 

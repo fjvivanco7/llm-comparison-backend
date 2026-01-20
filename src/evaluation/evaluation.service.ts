@@ -6,7 +6,8 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateEvaluationDto } from './dto/create-evaluation.dto';
+import { CreateEvaluationDto, PROBLEM_TAGS, SCORE_RUBRICS } from './dto/create-evaluation.dto';
+import { CreateComparativeEvaluationDto } from './dto/comparative-evaluation.dto';
 import { EvaluationResponseDto } from './dto/evaluation-response.dto';
 import { UserRole } from '@prisma/client';
 
@@ -69,13 +70,22 @@ export class EvaluationService {
       );
     }
 
-    // Calcular score total (promedio de las 4 categorías)
-    const totalScore =
-      (dto.readabilityScore +
-        dto.clarityScore +
-        dto.structureScore +
-        dto.documentationScore) /
-      4;
+    // Calcular score total incluyendo criterios nuevos si existen
+    const scores = [
+      dto.readabilityScore,
+      dto.clarityScore,
+      dto.structureScore,
+      dto.documentationScore,
+    ];
+
+    // Agregar criterios opcionales si están presentes
+    if (dto.functionalityScore) scores.push(dto.functionalityScore);
+    if (dto.efficiencyScore) scores.push(dto.efficiencyScore);
+    if (dto.errorHandlingScore) scores.push(dto.errorHandlingScore);
+    if (dto.bestPracticesScore) scores.push(dto.bestPracticesScore);
+    if (dto.securityScore) scores.push(dto.securityScore);
+
+    const totalScore = scores.reduce((a, b) => a + b, 0) / scores.length;
 
     // Crear evaluación
     const evaluation = await this.prisma.qualitativeEvaluation.create({
@@ -86,6 +96,14 @@ export class EvaluationService {
         clarityScore: dto.clarityScore,
         structureScore: dto.structureScore,
         documentationScore: dto.documentationScore,
+        // Nuevos criterios
+        functionalityScore: dto.functionalityScore,
+        efficiencyScore: dto.efficiencyScore,
+        errorHandlingScore: dto.errorHandlingScore,
+        bestPracticesScore: dto.bestPracticesScore,
+        securityScore: dto.securityScore,
+        // Problem tags
+        problemTags: dto.problemTags || [],
         totalScore,
         generalComments: dto.generalComments,
         readabilityComments: dto.readabilityComments,
@@ -147,6 +165,14 @@ export class EvaluationService {
           select: {
             id: true,
             userPrompt: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
           },
         },
         qualitativeEvaluations: {
@@ -175,6 +201,10 @@ export class EvaluationService {
       generatedAt: code.generatedAt,
       hasMetrics: !!code.metrics,
       quantitativeScore: code.metrics?.totalScore || null,
+      developerName: code.query.user.firstName && code.query.user.lastName
+        ? `${code.query.user.firstName} ${code.query.user.lastName}`
+        : code.query.user.email,
+      developerId: code.query.user.id,
     }));
   }
 
@@ -299,6 +329,7 @@ export class EvaluationService {
       clarityComments: evaluation.clarityComments,
       structureComments: evaluation.structureComments,
       documentationComments: evaluation.documentationComments,
+      problemTags: evaluation.problemTags || [],
       evaluatedAt: evaluation.evaluatedAt,
     };
   }
@@ -325,5 +356,265 @@ export class EvaluationService {
     });
 
     return evaluations.map((e) => this.mapToResponseDto(e));
+  }
+
+  // ============================================
+  // EVALUACIÓN COMPARATIVA
+  // ============================================
+
+  /**
+   * Obtener consultas disponibles para evaluación comparativa
+   * Solo consultas con 2+ códigos que el evaluador no ha comparado
+   */
+  async getQueriesForComparison(evaluatorId: number) {
+    // Obtener consultas con múltiples códigos
+    const queries = await this.prisma.userQuery.findMany({
+      where: {
+        status: 'completed',
+        generatedCodes: {
+          some: {}, // Al menos un código
+        },
+      },
+      include: {
+        generatedCodes: {
+          select: {
+            id: true,
+            llmName: true,
+            codeContent: true,
+            generatedAt: true,
+          },
+        },
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    // Filtrar solo las que tienen 2+ códigos
+    const queriesWithMultipleCodes = queries.filter(
+      (q) => q.generatedCodes.length >= 2,
+    );
+
+    // Obtener comparaciones ya hechas por este evaluador
+    const existingComparisons = await this.prisma.comparativeEvaluation.findMany({
+      where: { evaluatorId },
+      select: { queryId: true },
+    });
+
+    const comparedQueryIds = new Set(existingComparisons.map((c) => c.queryId));
+
+    // Filtrar las que no ha comparado
+    const pendingQueries = queriesWithMultipleCodes.filter(
+      (q) => !comparedQueryIds.has(q.id),
+    );
+
+    return pendingQueries.map((q) => ({
+      id: q.id,
+      userPrompt: q.userPrompt,
+      createdAt: q.createdAt,
+      codesCount: q.generatedCodes.length,
+      codes: q.generatedCodes.map((c) => ({
+        id: c.id,
+        llmName: c.llmName,
+        codePreview: c.codeContent.substring(0, 200) + '...',
+      })),
+    }));
+  }
+
+  /**
+   * Obtener detalle de una consulta para comparación side-by-side
+   */
+  async getQueryForComparison(queryId: number, evaluatorId: number) {
+    const query = await this.prisma.userQuery.findUnique({
+      where: { id: queryId },
+      include: {
+        generatedCodes: {
+          include: {
+            metrics: true,
+            qualitativeEvaluations: {
+              where: { evaluatorId },
+            },
+          },
+        },
+      },
+    });
+
+    if (!query) {
+      throw new NotFoundException(`Consulta ${queryId} no encontrada`);
+    }
+
+    // Verificar si ya hizo una comparación
+    const existingComparison = await this.prisma.comparativeEvaluation.findUnique({
+      where: {
+        queryId_evaluatorId: {
+          queryId,
+          evaluatorId,
+        },
+      },
+    });
+
+    return {
+      id: query.id,
+      userPrompt: query.userPrompt,
+      createdAt: query.createdAt,
+      codes: query.generatedCodes.map((code) => ({
+        id: code.id,
+        llmName: code.llmName,
+        codeContent: code.codeContent,
+        generatedAt: code.generatedAt,
+        hasMetrics: !!code.metrics,
+        quantitativeScore: code.metrics?.totalScore || null,
+        hasEvaluation: code.qualitativeEvaluations.length > 0,
+        evaluationScore: code.qualitativeEvaluations[0]?.totalScore || null,
+      })),
+      existingComparison: existingComparison
+        ? {
+            rankings: existingComparison.rankings,
+            winnerId: existingComparison.winnerId,
+            comparisonNotes: existingComparison.comparisonNotes,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Crear una evaluación comparativa
+   */
+  async createComparativeEvaluation(
+    evaluatorId: number,
+    dto: CreateComparativeEvaluationDto,
+  ) {
+    this.logger.log(
+      `Evaluador ${evaluatorId} creando evaluación comparativa para query ${dto.queryId}`,
+    );
+
+    // Verificar que la consulta existe
+    const query = await this.prisma.userQuery.findUnique({
+      where: { id: dto.queryId },
+      include: {
+        generatedCodes: true,
+      },
+    });
+
+    if (!query) {
+      throw new NotFoundException(`Consulta ${dto.queryId} no encontrada`);
+    }
+
+    // Verificar que no haya hecho ya una comparación
+    const existing = await this.prisma.comparativeEvaluation.findUnique({
+      where: {
+        queryId_evaluatorId: {
+          queryId: dto.queryId,
+          evaluatorId,
+        },
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException(
+        'Ya has realizado una comparación para esta consulta',
+      );
+    }
+
+    // Verificar que el ganador está en los rankings
+    if (dto.winnerId) {
+      const winnerInRankings = dto.rankings.some((r) => r.codeId === dto.winnerId);
+      if (!winnerInRankings) {
+        throw new ForbiddenException('El ganador debe estar en los rankings');
+      }
+    }
+
+    // Crear la evaluación comparativa
+    const comparison = await this.prisma.comparativeEvaluation.create({
+      data: {
+        queryId: dto.queryId,
+        evaluatorId,
+        rankings: dto.rankings as any, // Convert to JSON
+        winnerId: dto.winnerId || dto.rankings[0]?.codeId,
+        comparisonNotes: dto.comparisonNotes,
+      },
+    });
+
+    this.logger.log(
+      `Evaluación comparativa creada. Ganador: código ${comparison.winnerId}`,
+    );
+
+    return comparison;
+  }
+
+  /**
+   * Obtener mis evaluaciones comparativas
+   */
+  async getMyComparativeEvaluations(evaluatorId: number) {
+    const comparisons = await this.prisma.comparativeEvaluation.findMany({
+      where: { evaluatorId },
+      orderBy: { evaluatedAt: 'desc' },
+    });
+
+    // Obtener info de las queries
+    const queryIds = comparisons.map((c) => c.queryId);
+    const queries = await this.prisma.userQuery.findMany({
+      where: { id: { in: queryIds } },
+      include: {
+        generatedCodes: {
+          select: {
+            id: true,
+            llmName: true,
+          },
+        },
+      },
+    });
+
+    return comparisons.map((comp) => {
+      const query = queries.find((q) => q.id === comp.queryId);
+      const winnerCode = query?.generatedCodes.find((c) => c.id === comp.winnerId);
+
+      return {
+        id: comp.id,
+        queryId: comp.queryId,
+        userPrompt: query?.userPrompt || 'Consulta eliminada',
+        rankings: comp.rankings,
+        winnerId: comp.winnerId,
+        winnerLlm: winnerCode?.llmName || null,
+        comparisonNotes: comp.comparisonNotes,
+        evaluatedAt: comp.evaluatedAt,
+        codesCount: query?.generatedCodes.length || 0,
+      };
+    });
+  }
+
+  /**
+   * Obtener rúbricas y tags disponibles
+   */
+  getRubricsAndTags() {
+    return {
+      rubrics: SCORE_RUBRICS,
+      problemTags: PROBLEM_TAGS.map((tag) => ({
+        id: tag,
+        label: this.getTagLabel(tag),
+      })),
+    };
+  }
+
+  private getTagLabel(tag: string): string {
+    const labels: Record<string, string> = {
+      has_bugs: 'Tiene bugs',
+      redundant_code: 'Código redundante',
+      security_issue: 'Problema de seguridad',
+      bad_practice: 'Mala práctica',
+      missing_error_handling: 'Falta manejo de errores',
+      incomplete_code: 'Código incompleto',
+      poor_naming: 'Nombres poco descriptivos',
+      no_comments: 'Sin comentarios',
+      inefficient: 'Ineficiente',
+      hard_to_read: 'Difícil de leer',
+    };
+    return labels[tag] || tag;
   }
 }

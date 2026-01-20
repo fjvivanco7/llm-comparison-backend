@@ -43,6 +43,9 @@ export class EvaluationResponseDto {
   @ApiProperty({ required: false })
   documentationComments?: string;
 
+  @ApiProperty({ required: false, type: [String] })
+  problemTags?: string[];
+
   @ApiProperty()
   evaluatedAt: Date;
 }

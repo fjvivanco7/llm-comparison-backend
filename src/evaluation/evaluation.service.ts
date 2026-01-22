@@ -6,16 +6,26 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateEvaluationDto, PROBLEM_TAGS, SCORE_RUBRICS } from './dto/create-evaluation.dto';
+import {
+  CreateEvaluationDto,
+  PROBLEM_TAGS,
+  SCORE_RUBRICS,
+} from './dto/create-evaluation.dto';
 import { CreateComparativeEvaluationDto } from './dto/comparative-evaluation.dto';
 import { EvaluationResponseDto } from './dto/evaluation-response.dto';
 import { UserRole } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 @Injectable()
 export class EvaluationService {
   private readonly logger = new Logger(EvaluationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+    private readonly notificationsGateway: NotificationsGateway,
+  ) {}
 
   /**
    * Crear una evaluación cualitativa (solo evaluadores)
@@ -25,9 +35,7 @@ export class EvaluationService {
     evaluatorId: number,
     dto: CreateEvaluationDto,
   ): Promise<EvaluationResponseDto> {
-    this.logger.log(
-      `Evaluador ${evaluatorId} evaluando código ${codeId}`,
-    );
+    this.logger.log(`Evaluador ${evaluatorId} evaluando código ${codeId}`);
 
     // Verificar que el código existe
     const code = await this.prisma.generatedCode.findUnique({
@@ -47,7 +55,10 @@ export class EvaluationService {
       throw new NotFoundException(`Evaluador ${evaluatorId} no encontrado`);
     }
 
-    if (evaluator.role !== UserRole.EVALUATOR && evaluator.role !== UserRole.ADMIN) {
+    if (
+      evaluator.role !== UserRole.EVALUATOR &&
+      evaluator.role !== UserRole.ADMIN
+    ) {
       throw new ForbiddenException(
         'Solo evaluadores pueden crear evaluaciones cualitativas',
       );
@@ -127,6 +138,54 @@ export class EvaluationService {
       `Evaluación creada exitosamente. Score: ${totalScore.toFixed(2)}`,
     );
 
+    // Notificar al dueño del código que su código fue evaluado
+    try {
+      const codeWithQuery = await this.prisma.generatedCode.findUnique({
+        where: { id: codeId },
+        include: {
+          query: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (codeWithQuery && codeWithQuery.query.userId !== evaluatorId) {
+        const evaluatorName =
+          evaluator.firstName && evaluator.lastName
+            ? `${evaluator.firstName} ${evaluator.lastName}`
+            : evaluator.email;
+
+        const notification =
+          await this.notificationsService.notifyCodeEvaluated({
+            codeOwnerId: codeWithQuery.query.userId,
+            codeId,
+            evaluatorName,
+            llmName: codeWithQuery.llmName,
+            score: totalScore,
+          });
+
+        // Enviar notificación en tiempo real via WebSocket
+        this.notificationsGateway.sendNotificationToUser(
+          codeWithQuery.query.userId,
+          notification,
+        );
+      }
+    } catch (notificationError) {
+      this.logger.error(
+        `Error enviando notificación: ${notificationError.message}`,
+      );
+      // No lanzamos error para no afectar la respuesta principal
+    }
+
     return this.mapToResponseDto(evaluation);
   }
 
@@ -155,44 +214,60 @@ export class EvaluationService {
   }
 
   /**
-   * Obtener códigos pendientes de evaluar
+   * Obtener códigos pendientes de evaluar con paginación
    */
-  async getPendingCodesForEvaluator(evaluatorId: number) {
-    // Códigos que este evaluador NO ha evaluado aún
-    const allCodes = await this.prisma.generatedCode.findMany({
-      include: {
-        query: {
-          select: {
-            id: true,
-            userPrompt: true,
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
+  async getPendingCodesForEvaluator(
+    evaluatorId: number,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const skip = (page - 1) * limit;
+
+    // Obtener IDs de códigos ya evaluados por este evaluador
+    const evaluatedCodeIds = await this.prisma.qualitativeEvaluation.findMany({
+      where: { evaluatorId },
+      select: { codeId: true },
+    });
+
+    const evaluatedIds = evaluatedCodeIds.map((e) => e.codeId);
+
+    // Construir el where clause para excluir códigos ya evaluados
+    const whereClause =
+      evaluatedIds.length > 0 ? { id: { notIn: evaluatedIds } } : {};
+
+    // Obtener total y códigos paginados en paralelo
+    const [total, codes] = await Promise.all([
+      this.prisma.generatedCode.count({ where: whereClause }),
+      this.prisma.generatedCode.findMany({
+        where: whereClause,
+        include: {
+          query: {
+            select: {
+              id: true,
+              userPrompt: true,
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
+          metrics: true,
         },
-        qualitativeEvaluations: {
-          where: {
-            evaluatorId,
-          },
+        orderBy: {
+          generatedAt: 'desc',
         },
-        metrics: true,
-      },
-      orderBy: {
-        generatedAt: 'desc',
-      },
-    });
+        skip,
+        take: limit,
+      }),
+    ]);
 
-    // Filtrar solo los que no tienen evaluación de este evaluador
-    const pendingCodes = allCodes.filter(
-      (code) => code.qualitativeEvaluations.length === 0,
-    );
+    const totalPages = Math.ceil(total / limit);
 
-    return pendingCodes.map((code) => ({
+    const data = codes.map((code) => ({
       id: code.id,
       llmName: code.llmName,
       codeContent: code.codeContent,
@@ -201,11 +276,24 @@ export class EvaluationService {
       generatedAt: code.generatedAt,
       hasMetrics: !!code.metrics,
       quantitativeScore: code.metrics?.totalScore || null,
-      developerName: code.query.user.firstName && code.query.user.lastName
-        ? `${code.query.user.firstName} ${code.query.user.lastName}`
-        : code.query.user.email,
+      developerName:
+        code.query.user.firstName && code.query.user.lastName
+          ? `${code.query.user.firstName} ${code.query.user.lastName}`
+          : code.query.user.email,
       developerId: code.query.user.id,
     }));
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 
   /**
@@ -298,10 +386,10 @@ export class EvaluationService {
       },
       bestCode: bestCode
         ? {
-          codeId: bestCode.code.id,
-          llmName: bestCode.code.llmName,
-          score: bestCode.totalScore,
-        }
+            codeId: bestCode.code.id,
+            llmName: bestCode.code.llmName,
+            score: bestCode.totalScore,
+          }
         : null,
       modelRanking,
     };
@@ -317,7 +405,7 @@ export class EvaluationService {
       evaluatorId: evaluation.evaluatorId,
       evaluatorName: evaluation.evaluator
         ? `${evaluation.evaluator.firstName || ''} ${evaluation.evaluator.lastName || ''}`.trim() ||
-        evaluation.evaluator.email
+          evaluation.evaluator.email
         : 'Evaluador',
       readabilityScore: evaluation.readabilityScore,
       clarityScore: evaluation.clarityScore,
@@ -335,27 +423,56 @@ export class EvaluationService {
   }
 
   /**
-   * Obtener todas las evaluaciones de un evaluador específico
+   * Obtener todas las evaluaciones de un evaluador específico con paginación
    */
-  async getMyEvaluations(evaluatorId: number): Promise<EvaluationResponseDto[]> {
-    const evaluations = await this.prisma.qualitativeEvaluation.findMany({
-      where: { evaluatorId },
-      include: {
-        evaluator: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
+  async getMyEvaluations(
+    evaluatorId: number,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const skip = (page - 1) * limit;
+
+    // Obtener total y evaluaciones en paralelo
+    const [total, evaluations] = await Promise.all([
+      this.prisma.qualitativeEvaluation.count({
+        where: { evaluatorId },
+      }),
+      this.prisma.qualitativeEvaluation.findMany({
+        where: { evaluatorId },
+        include: {
+          evaluator: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
           },
         },
-      },
-      orderBy: {
-        evaluatedAt: 'desc',
-      },
-    });
+        orderBy: {
+          evaluatedAt: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+    ]);
 
-    return evaluations.map((e) => this.mapToResponseDto(e));
+    // Calcular metadatos de paginación
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    return {
+      data: evaluations.map((e) => this.mapToResponseDto(e)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+      },
+    };
   }
 
   // ============================================
@@ -402,10 +519,11 @@ export class EvaluationService {
     );
 
     // Obtener comparaciones ya hechas por este evaluador
-    const existingComparisons = await this.prisma.comparativeEvaluation.findMany({
-      where: { evaluatorId },
-      select: { queryId: true },
-    });
+    const existingComparisons =
+      await this.prisma.comparativeEvaluation.findMany({
+        where: { evaluatorId },
+        select: { queryId: true },
+      });
 
     const comparedQueryIds = new Set(existingComparisons.map((c) => c.queryId));
 
@@ -450,14 +568,15 @@ export class EvaluationService {
     }
 
     // Verificar si ya hizo una comparación
-    const existingComparison = await this.prisma.comparativeEvaluation.findUnique({
-      where: {
-        queryId_evaluatorId: {
-          queryId,
-          evaluatorId,
+    const existingComparison =
+      await this.prisma.comparativeEvaluation.findUnique({
+        where: {
+          queryId_evaluatorId: {
+            queryId,
+            evaluatorId,
+          },
         },
-      },
-    });
+      });
 
     return {
       id: query.id,
@@ -524,7 +643,9 @@ export class EvaluationService {
 
     // Verificar que el ganador está en los rankings
     if (dto.winnerId) {
-      const winnerInRankings = dto.rankings.some((r) => r.codeId === dto.winnerId);
+      const winnerInRankings = dto.rankings.some(
+        (r) => r.codeId === dto.winnerId,
+      );
       if (!winnerInRankings) {
         throw new ForbiddenException('El ganador debe estar en los rankings');
       }
@@ -573,7 +694,9 @@ export class EvaluationService {
 
     return comparisons.map((comp) => {
       const query = queries.find((q) => q.id === comp.queryId);
-      const winnerCode = query?.generatedCodes.find((c) => c.id === comp.winnerId);
+      const winnerCode = query?.generatedCodes.find(
+        (c) => c.id === comp.winnerId,
+      );
 
       return {
         id: comp.id,

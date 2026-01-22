@@ -55,6 +55,7 @@ model User {
   qualitativeEvaluations QualitativeEvaluation[]
   sessions UserSession[]
   preferences UserPreferences?
+  notifications Notification[]
 
   @@map("users")
 }
@@ -277,4 +278,33 @@ model AppSettings {
   updatedAt   DateTime @updatedAt
 
   @@map("app_settings")
+}
+
+// ============================================
+// NOTIFICACIONES
+// ============================================
+enum NotificationType {
+  CODE_EVALUATED        // Cuando un evaluador evalúa el código de un usuario
+  NEW_CODE_TO_EVALUATE  // Cuando hay nuevo código disponible para evaluar
+  EVALUATION_REMINDER   // Recordatorio de evaluaciones pendientes
+  SYSTEM                // Notificaciones del sistema
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?            // Metadata adicional (codeId, queryId, evaluatorId, etc.)
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  readAt    DateTime?
+
+  // Relación
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

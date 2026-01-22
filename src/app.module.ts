@@ -11,6 +11,7 @@ import { EmailModule } from './email/email.module';
 import { EvaluationModule } from './evaluation/evaluation.module';
 import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { AdminModule } from './admin/admin.module';
     ComparisonModule,
     EvaluationModule,
     AdminModule,
+    NotificationsModule,
   ],
   controllers: [],
   providers: [],

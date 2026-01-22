@@ -1,4 +1,4 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsObject } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateSettingDto {
@@ -17,5 +17,6 @@ export class BulkUpdateSettingsDto {
     description: 'Configuraciones a actualizar',
     example: { dailyQueryLimit: '10', maxModelsPerQuery: '5' },
   })
+  @IsObject()
   settings: Record<string, string>;
 }

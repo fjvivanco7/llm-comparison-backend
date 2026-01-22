@@ -4,6 +4,7 @@ import {
   Get,
   Body,
   Param,
+  Query,
   ParseIntPipe,
   UseGuards,
   Req,
@@ -14,6 +15,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { EvaluationService } from './evaluation.service';
 import { CreateEvaluationDto } from './dto/create-evaluation.dto';
@@ -93,15 +95,40 @@ export class EvaluationController {
   @Roles(UserRole.EVALUATOR, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Obtener códigos pendientes de evaluar',
-    description: 'Lista códigos que el evaluador aún no ha calificado',
+    description:
+      'Lista códigos que el evaluador aún no ha calificado (con paginación)',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Página actual (default: 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Elementos por página (default: 10)',
   })
   @ApiResponse({
     status: 200,
-    description: 'Lista de códigos pendientes',
+    description: 'Lista de códigos pendientes paginada',
   })
-  async getPendingCodes(@Req() req: any) {
+  async getPendingCodes(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
+    const limitNum = Math.min(
+      50,
+      Math.max(1, parseInt(limit || '10', 10) || 10),
+    );
+
     return await this.evaluationService.getPendingCodesForEvaluator(
       req.user.id,
+      pageNum,
+      limitNum,
     );
   }
 
@@ -111,7 +138,8 @@ export class EvaluationController {
   @Get('stats')
   @ApiOperation({
     summary: 'Estadísticas de evaluación cualitativa',
-    description: 'Promedios y mejores códigos. Evaluadores ven sus propias stats, admins ven globales',
+    description:
+      'Promedios y mejores códigos. Evaluadores ven sus propias stats, admins ven globales',
   })
   @ApiResponse({
     status: 200,
@@ -133,18 +161,52 @@ export class EvaluationController {
    * Obtener mis evaluaciones (historial del evaluador)
    */
   @Get('my-evaluations')
-  @Roles(UserRole.EVALUATOR, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Obtener mis evaluaciones',
-    description: 'Lista todas las evaluaciones realizadas por el evaluador actual',
+    description:
+      'Lista todas las evaluaciones realizadas por el evaluador actual con paginación',
   })
   @ApiResponse({
     status: 200,
     description: 'Evaluaciones encontradas',
-    type: [EvaluationResponseDto],
+    schema: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/EvaluationResponseDto' },
+        },
+        meta: {
+          type: 'object',
+          properties: {
+            total: { type: 'number' },
+            page: { type: 'number' },
+            limit: { type: 'number' },
+            totalPages: { type: 'number' },
+            hasNextPage: { type: 'boolean' },
+            hasPrevPage: { type: 'boolean' },
+          },
+        },
+      },
+    },
   })
-  async getMyEvaluations(@Req() req: any) {
-    return await this.evaluationService.getMyEvaluations(req.user.id);
+  async getMyEvaluations(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    // Validar y normalizar parámetros de paginación
+    const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
+    const limitNum = Math.min(
+      50,
+      Math.max(1, parseInt(limit || '10', 10) || 10),
+    );
+
+    return await this.evaluationService.getMyEvaluations(
+      req.user.id,
+      pageNum,
+      limitNum,
+    );
   }
 
   // ============================================
@@ -157,7 +219,8 @@ export class EvaluationController {
   @Get('rubrics-and-tags')
   @ApiOperation({
     summary: 'Obtener rúbricas y tags',
-    description: 'Devuelve las rúbricas de puntuación y tags de problemas disponibles',
+    description:
+      'Devuelve las rúbricas de puntuación y tags de problemas disponibles',
   })
   @ApiResponse({
     status: 200,
@@ -178,7 +241,8 @@ export class EvaluationController {
   @Roles(UserRole.EVALUATOR, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Consultas pendientes para comparar',
-    description: 'Lista consultas con 2+ códigos que el evaluador no ha comparado',
+    description:
+      'Lista consultas con 2+ códigos que el evaluador no ha comparado',
   })
   @ApiResponse({
     status: 200,
@@ -195,7 +259,8 @@ export class EvaluationController {
   @Roles(UserRole.EVALUATOR, UserRole.ADMIN)
   @ApiOperation({
     summary: 'Detalle para comparación',
-    description: 'Obtiene todos los códigos de una consulta para comparar lado a lado',
+    description:
+      'Obtiene todos los códigos de una consulta para comparar lado a lado',
   })
   @ApiParam({ name: 'queryId', description: 'ID de la consulta' })
   @ApiResponse({
@@ -206,7 +271,10 @@ export class EvaluationController {
     @Param('queryId', ParseIntPipe) queryId: number,
     @Req() req: any,
   ) {
-    return await this.evaluationService.getQueryForComparison(queryId, req.user.id);
+    return await this.evaluationService.getQueryForComparison(
+      queryId,
+      req.user.id,
+    );
   }
 
   /**
@@ -250,6 +318,8 @@ export class EvaluationController {
     description: 'Lista de comparaciones',
   })
   async getMyComparativeEvaluations(@Req() req: any) {
-    return await this.evaluationService.getMyComparativeEvaluations(req.user.id);
+    return await this.evaluationService.getMyComparativeEvaluations(
+      req.user.id,
+    );
   }
 }

@@ -5,6 +5,8 @@ import { CreateQueryDto } from './dto/create-query.dto';
 import { QueryResponseDto } from './dto/query-response.dto';
 import { LlmProvider } from '../llm/dto/generate-code.dto';
 import { ForbiddenException } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 @Injectable()
 export class QueriesService {
@@ -13,6 +15,8 @@ export class QueriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llmService: LlmService,
+    private readonly notificationsService: NotificationsService,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   private readonly DEFAULT_DAILY_LIMIT = 10;
@@ -144,7 +148,34 @@ export class QueriesService {
         data: { status: 'completed' },
       });
 
-      // 5. Retornar la consulta completa con los códigos
+      // 5. Notificar a los evaluadores que hay nuevo código para evaluar
+      try {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { firstName: true, lastName: true, email: true },
+        });
+
+        const developerName = user?.firstName && user?.lastName
+          ? `${user.firstName} ${user.lastName}`
+          : user?.email || 'Usuario';
+
+        const notifications = await this.notificationsService.notifyNewCodeToEvaluate({
+          queryId: query.id,
+          userPrompt: dto.userPrompt,
+          developerName,
+          codesCount: savedCodes.length,
+        });
+
+        // Enviar notificaciones en tiempo real via WebSocket
+        this.notificationsGateway.sendNotificationToEvaluators(notifications);
+
+        this.logger.log(`${notifications.length} evaluadores notificados de nuevo código`);
+      } catch (notificationError) {
+        this.logger.error(`Error enviando notificaciones: ${notificationError.message}`);
+        // No lanzamos error para no afectar la respuesta principal
+      }
+
+      // 6. Retornar la consulta completa con los códigos
       return await this.findOne(query.id, userId);
     } catch (error) {
       this.logger.error(`Error creando consulta: ${error.message}`);

@@ -125,6 +125,7 @@ model GeneratedCode {
   testExecutions   TestExecution[]
   securityFindings SecurityFinding[]
   qualitativeEvaluations QualitativeEvaluation[] // ← SOLO AGREGAR ESTA LÍNEA
+  tokenUsage       TokenUsage?       // ← NUEVO: relación con uso de tokens
 
   @@map("generated_codes")
 }
@@ -307,4 +308,26 @@ model Notification {
   @@index([userId, isRead])
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+// ============================================
+// USO DE TOKENS (rastreo de consumo por modelo)
+// ============================================
+model TokenUsage {
+  id               Int      @id @default(autoincrement())
+  codeId           Int      @unique
+  provider         String   // "openrouter", "ollama"
+  model            String   // "gpt-4", "claude-3.5-sonnet", etc.
+  promptTokens     Int?     // Tokens del prompt enviado
+  completionTokens Int?     // Tokens de la respuesta generada
+  totalTokens      Int?     // Total de tokens consumidos
+  estimatedCost    Float?   // Costo estimado en USD (si aplica)
+  createdAt        DateTime @default(now())
+
+  // Relación
+  code GeneratedCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+
+  @@index([provider, model])
+  @@index([createdAt])
+  @@map("token_usage")
 }

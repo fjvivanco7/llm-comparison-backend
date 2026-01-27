@@ -87,6 +87,34 @@ export class QueriesController {
   }
 
   /**
+   * Obtener tokens restantes del día
+   */
+  @Get('remaining-tokens')
+  @ApiOperation({
+    summary: 'Obtener tokens restantes',
+    description: 'Obtiene cuántos tokens ha usado hoy el usuario y cuántos le quedan disponibles',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Información de tokens',
+    schema: {
+      type: 'object',
+      properties: {
+        used: { type: 'number', example: 5234 },
+        limit: { type: 'number', example: 10000 },
+        remaining: { type: 'number', example: 4766 },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'No autenticado',
+  })
+  async getRemainingTokens(@CurrentUser() user: any) {
+    return await this.queriesService.getRemainingTokens(user.id);
+  }
+
+  /**
    * Obtener una consulta específica por ID
    */
   @Get(':id')

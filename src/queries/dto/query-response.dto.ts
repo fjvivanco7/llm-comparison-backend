@@ -61,6 +61,20 @@ export class CodeMetricsResponseDto {
   analyzedAt: Date;
 }
 
+export class TokenUsageResponseDto {
+  @ApiProperty({ description: 'Tokens del prompt enviado', required: false })
+  promptTokens?: number;
+
+  @ApiProperty({ description: 'Tokens de la respuesta generada', required: false })
+  completionTokens?: number;
+
+  @ApiProperty({ description: 'Total de tokens consumidos', required: false })
+  totalTokens?: number;
+
+  @ApiProperty({ description: 'Costo estimado en USD', required: false })
+  estimatedCost?: number;
+}
+
 export class GeneratedCodeResponseDto {
   @ApiProperty()
   id: number;
@@ -77,7 +91,9 @@ export class GeneratedCodeResponseDto {
   @ApiProperty()
   generatedAt: Date;
 
-  // ← AGREGAR ESTO
+  @ApiProperty({ type: TokenUsageResponseDto, required: false, description: 'Información de tokens consumidos' })
+  tokenUsage?: TokenUsageResponseDto;
+
   @ApiProperty({ type: CodeMetricsResponseDto, required: false })
   metrics?: CodeMetricsResponseDto;
 }

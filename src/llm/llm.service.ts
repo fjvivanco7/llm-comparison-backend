@@ -29,16 +29,21 @@ export class LlmService {
 
       this.logger.log(`Generando código con ${dto.provider}/${model}`);
 
-      // Generar código
-      const code = await provider.generateCode(model, dto.prompt);
+      // Generar código (ahora retorna un objeto con code y usage)
+      const result = await provider.generateCode(model, dto.prompt);
 
-      // Preparar respuesta
+      // Preparar respuesta con información de tokens
       const response: LlmResponseDto = {
-        code,
+        code: result.code,
         model,
         provider: dto.provider || LlmProvider.OLLAMA,
         generationTimeMs: Date.now() - startTime,
         generatedAt: new Date(),
+        // Incluir información de tokens si está disponible
+        promptTokens: result.usage?.promptTokens,
+        completionTokens: result.usage?.completionTokens,
+        totalTokens: result.usage?.totalTokens,
+        estimatedCost: result.usage?.estimatedCost,
       };
 
       return response;
@@ -169,13 +174,16 @@ export class LlmService {
   }
 
   /**
-   * Valida si el código generado es una función válida usando IA
+   * Valida si el código generado es una función JavaScript válida
    */
   async validateIsFunction(code: string): Promise<{ isValid: boolean; reason: string }> {
     this.logger.log('🔍 Validando si el código es una función...');
 
     try {
-      const validationPrompt = `Is this code a pure JavaScript function? No React, no JSX, no components, no classes. Only plain JavaScript functions.
+      const validationPrompt = `Is this a JavaScript function? External dependencies (mysql, axios, fs, etc.) are allowed.
+
+VALID: function declarations, arrow functions, async functions, exported functions with require/import
+INVALID: React components (JSX), only variables, only classes without exported function
 
 CODE:
 \`\`\`
@@ -186,7 +194,7 @@ Respond ONLY with JSON:
 {"isFunction": true/false, "reason": "brief explanation"}`;
 
       const response = await this.openRouterProvider.generateRaw(
-        'mistralai/mistral-7b-instruct:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
         validationPrompt,
       );
 

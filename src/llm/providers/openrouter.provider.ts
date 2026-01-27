@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenRouter } from '@openrouter/sdk';
-import { ILlmProvider } from '../interfaces/llm-provider.interface';
+import { ILlmProvider, GenerateCodeResponse } from '../interfaces/llm-provider.interface';
+import { calculateCost } from '../pricing.config';
 
 @Injectable()
 export class OpenRouterProvider implements ILlmProvider {
@@ -28,7 +29,7 @@ export class OpenRouterProvider implements ILlmProvider {
     this.logger.log('✅ OpenRouter Provider inicializado con 4 modelos premium');
   }
 
-  async generateCode(model: string, prompt: string): Promise<string> {
+  async generateCode(model: string, prompt: string): Promise<GenerateCodeResponse> {
     try {
       this.logger.log(`🚀 Generando código con modelo: ${model}`);
 
@@ -78,8 +79,29 @@ export class OpenRouterProvider implements ILlmProvider {
         throw new Error('El modelo no generó ningún código');
       }
 
+      // ✨ NUEVO: Extraer información de tokens de la respuesta
+      const usage = response.usage ? {
+        promptTokens: response.usage.promptTokens,
+        completionTokens: response.usage.completionTokens,
+        totalTokens: response.usage.totalTokens,
+        estimatedCost: calculateCost(
+          fullModelName,
+          response.usage.promptTokens,
+          response.usage.completionTokens
+        ),
+      } : undefined;
+
+      if (usage) {
+        this.logger.log(
+          `📊 Tokens consumidos: ${usage.totalTokens} (prompt: ${usage.promptTokens}, completion: ${usage.completionTokens}) - Costo: $${usage.estimatedCost?.toFixed(6)}`
+        );
+      }
+
       this.logger.log(`✅ Código generado exitosamente con ${model}`);
-      return this.cleanCode(generatedCode);
+      return {
+        code: this.cleanCode(generatedCode),
+        usage,
+      };
     } catch (error) {
       this.logger.error(`❌ Error generando código con ${model}:`, error.message);
       throw new Error(`Failed to generate code with OpenRouter: ${error.message}`);
@@ -161,9 +183,18 @@ export class OpenRouterProvider implements ILlmProvider {
       );
 
       const content = response.choices[0]?.message?.content;
-      return Array.isArray(content)
+      const contentStr = Array.isArray(content)
         ? content.map((c) => (typeof c === 'string' ? c : c.type === 'text' ? c.text : '')).join('')
         : (content || '');
+
+      // Log de tokens si están disponibles
+      if (response.usage) {
+        this.logger.log(
+          `📊 [Validación] Tokens: ${response.usage.totalTokens} (prompt: ${response.usage.promptTokens}, completion: ${response.usage.completionTokens})`
+        );
+      }
+
+      return contentStr;
     } catch (error) {
       this.logger.error(`❌ Error en generateRaw: ${error.message}`);
       throw error;

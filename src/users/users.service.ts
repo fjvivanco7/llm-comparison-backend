@@ -263,15 +263,43 @@ export class UsersService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Consultas
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Consultas (para estadísticas generales)
     const [totalQueries, queriesLast30Days, queriesToday] = await Promise.all([
       this.prisma.userQuery.count({ where: { userId } }),
       this.prisma.userQuery.count({ where: { userId, createdAt: { gte: thirtyDaysAgo } } }),
       this.prisma.userQuery.count({ where: { userId, createdAt: { gte: today } } }),
     ]);
 
-    const dailyLimit = 10;
-    const remainingToday = Math.max(0, dailyLimit - queriesToday);
+    // Obtener límite de tokens desde configuración
+    const tokenLimitSetting = await this.prisma.appSettings.findUnique({
+      where: { key: 'dailyTokenLimit' },
+    });
+    const dailyTokenLimit = tokenLimitSetting ? parseInt(tokenLimitSetting.value, 10) : 10000;
+
+    // Calcular tokens consumidos hoy
+    const codesWithTokensToday = await this.prisma.generatedCode.findMany({
+      where: {
+        query: {
+          userId,
+          createdAt: {
+            gte: today,
+            lt: tomorrow,
+          },
+        },
+      },
+      include: {
+        tokenUsage: true,
+      },
+    });
+
+    const tokensUsedToday = codesWithTokensToday.reduce((sum, code) => {
+      return sum + (code.tokenUsage?.totalTokens || 0);
+    }, 0);
+
+    const tokensRemaining = Math.max(0, dailyTokenLimit - tokensUsedToday);
 
     // Códigos y análisis
     const [totalCodes, totalAnalyses] = await Promise.all([
@@ -312,10 +340,10 @@ export class UsersService {
         memberSinceDays,
       },
       daily: {
-        used: queriesToday,
-        limit: dailyLimit,
-        remaining: remainingToday,
-        percentageUsed: Math.round((queriesToday / dailyLimit) * 100),
+        used: tokensUsedToday,
+        limit: dailyTokenLimit,
+        remaining: tokensRemaining,
+        percentageUsed: Math.round((tokensUsedToday / dailyTokenLimit) * 100),
       },
       last30Days: {
         queries: queriesLast30Days,

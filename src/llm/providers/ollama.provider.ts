@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ILlmProvider } from '../interfaces/llm-provider.interface';
+import { ILlmProvider, GenerateCodeResponse } from '../interfaces/llm-provider.interface';
 
 @Injectable()
 export class OllamaProvider implements ILlmProvider {
@@ -17,7 +17,7 @@ export class OllamaProvider implements ILlmProvider {
   /**
    * Genera código usando Ollama
    */
-  async generateCode(model: string, prompt: string): Promise<string> {
+  async generateCode(model: string, prompt: string): Promise<GenerateCodeResponse> {
     try {
       this.logger.log(`Generando código con modelo: ${model}`);
 
@@ -41,7 +41,12 @@ export class OllamaProvider implements ILlmProvider {
       const generatedCode = data.response;
 
       this.logger.log(`Código generado exitosamente con ${model}`);
-      return this.cleanCode(generatedCode);
+
+      // Ollama no proporciona información de tokens, solo retornamos el código
+      return {
+        code: this.cleanCode(generatedCode),
+        // usage: undefined (Ollama no soporta tracking de tokens)
+      };
     } catch (error) {
       this.logger.error(`Error generando código con ${model}:`, error.message);
       throw new Error(`Failed to generate code with Ollama: ${error.message}`);

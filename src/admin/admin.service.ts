@@ -5,7 +5,7 @@ import { UserRole } from '@prisma/client';
 
 // Configuraciones por defecto
 const DEFAULT_SETTINGS = {
-  dailyQueryLimit: { value: '10', description: 'Límite de consultas diarias por usuario' },
+  dailyTokenLimit: { value: '10000', description: 'Límite de tokens diarios por usuario (~5-7 queries con 4 modelos)' },
   maxModelsPerQuery: { value: '5', description: 'Máximo de modelos por consulta' },
   maintenanceMode: { value: 'false', description: 'Modo mantenimiento activo' },
 };
@@ -22,6 +22,8 @@ export class AdminService {
   async getDashboardStats() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
     const [
       totalUsers,
@@ -32,6 +34,8 @@ export class AdminService {
       queriesToday,
       usersByRole,
       recentUsers,
+      totalTokensSum,
+      tokensTodaySum,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.userQuery.count(),
@@ -55,6 +59,17 @@ export class AdminService {
           createdAt: true,
         },
       }),
+      // Total de tokens consumidos (todos los tiempos)
+      this.prisma.tokenUsage.aggregate({
+        _sum: { totalTokens: true },
+      }),
+      // Tokens consumidos hoy
+      this.prisma.tokenUsage.aggregate({
+        where: {
+          createdAt: { gte: today, lt: tomorrow },
+        },
+        _sum: { totalTokens: true },
+      }),
     ]);
 
     const roleStats = usersByRole.reduce((acc, item) => {
@@ -68,10 +83,12 @@ export class AdminService {
         queries: totalQueries,
         codes: totalCodes,
         evaluations: totalEvaluations,
+        tokens: totalTokensSum._sum.totalTokens || 0,
       },
       today: {
         newUsers: usersToday,
         queries: queriesToday,
+        tokens: tokensTodaySum._sum.totalTokens || 0,
       },
       usersByRole: {
         users: roleStats.USER || 0,
@@ -184,8 +201,11 @@ export class AdminService {
     // Obtener estadísticas de uso
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const [queriesToday, queriesLast30Days] = await Promise.all([
+    const [queriesToday, queriesLast30Days, codesWithTokensToday, codesWithTokensLast30Days] = await Promise.all([
       this.prisma.userQuery.count({
         where: {
           userId: id,
@@ -195,12 +215,46 @@ export class AdminService {
       this.prisma.userQuery.count({
         where: {
           userId: id,
-          createdAt: {
-            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          createdAt: { gte: thirtyDaysAgo },
+        },
+      }),
+      // Tokens consumidos hoy
+      this.prisma.generatedCode.findMany({
+        where: {
+          query: {
+            userId: id,
+            createdAt: {
+              gte: today,
+              lt: tomorrow,
+            },
           },
+        },
+        include: {
+          tokenUsage: true,
+        },
+      }),
+      // Tokens últimos 30 días
+      this.prisma.generatedCode.findMany({
+        where: {
+          query: {
+            userId: id,
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        },
+        include: {
+          tokenUsage: true,
         },
       }),
     ]);
+
+    // Calcular tokens totales
+    const tokensToday = codesWithTokensToday.reduce((sum, code) => {
+      return sum + (code.tokenUsage?.totalTokens || 0);
+    }, 0);
+
+    const tokensLast30Days = codesWithTokensLast30Days.reduce((sum, code) => {
+      return sum + (code.tokenUsage?.totalTokens || 0);
+    }, 0);
 
     return {
       ...user,
@@ -210,6 +264,8 @@ export class AdminService {
       usage: {
         queriesToday,
         queriesLast30Days,
+        tokensToday,
+        tokensLast30Days,
       },
     };
   }

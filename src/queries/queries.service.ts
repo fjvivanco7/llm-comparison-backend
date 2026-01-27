@@ -19,50 +19,62 @@ export class QueriesService {
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
-  private readonly DEFAULT_DAILY_LIMIT = 10;
+  private readonly DEFAULT_DAILY_TOKEN_LIMIT = 10000; // 10k tokens/día (~5 queries con 4 modelos)
 
   /**
-   * Obtiene el límite diario de consultas desde la configuración
+   * Obtiene el límite diario de tokens desde la configuración
    */
-  private async getDailyQueryLimit(): Promise<number> {
+  private async getDailyTokenLimit(): Promise<number> {
     const setting = await this.prisma.appSettings.findUnique({
-      where: { key: 'dailyQueryLimit' },
+      where: { key: 'dailyTokenLimit' },
     });
-    return setting ? parseInt(setting.value, 10) : this.DEFAULT_DAILY_LIMIT;
+    return setting ? parseInt(setting.value, 10) : this.DEFAULT_DAILY_TOKEN_LIMIT;
   }
 
   /**
-   * Cuenta las consultas del usuario en el día actual
+   * Calcula los tokens consumidos por el usuario en el día actual
    */
-  private async getDailyQueryCount(userId: number): Promise<number> {
+  private async getDailyTokenUsage(userId: number): Promise<number> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const count = await this.prisma.userQuery.count({
+    // Obtener todos los códigos generados hoy por el usuario
+    const codes = await this.prisma.generatedCode.findMany({
       where: {
-        userId,
-        createdAt: {
-          gte: today,
-          lt: tomorrow,
+        query: {
+          userId,
+          createdAt: {
+            gte: today,
+            lt: tomorrow,
+          },
         },
+      },
+      include: {
+        tokenUsage: true,
       },
     });
 
-    const limit = await this.getDailyQueryLimit();
-    this.logger.log(`📊 Usuario ${userId}: ${count}/${limit} consultas hoy`);
-    return count;
+    // Sumar todos los tokens consumidos
+    const totalTokens = codes.reduce((sum, code) => {
+      return sum + (code.tokenUsage?.totalTokens || 0);
+    }, 0);
+
+    const limit = await this.getDailyTokenLimit();
+    this.logger.log(`📊 Usuario ${userId}: ${totalTokens.toLocaleString()}/${limit.toLocaleString()} tokens consumidos hoy`);
+
+    return totalTokens;
   }
 
   /**
-   * Obtiene las consultas restantes del día para el usuario
+   * Obtiene los tokens restantes del día para el usuario
    */
-  async getRemainingQueries(userId: number): Promise<{ used: number; limit: number; remaining: number }> {
+  async getRemainingTokens(userId: number): Promise<{ used: number; limit: number; remaining: number }> {
     const [used, limit] = await Promise.all([
-      this.getDailyQueryCount(userId),
-      this.getDailyQueryLimit(),
+      this.getDailyTokenUsage(userId),
+      this.getDailyTokenLimit(),
     ]);
     return {
       used,
@@ -81,30 +93,23 @@ export class QueriesService {
     this.logger.log(`Creando nueva consulta para usuario ${userId}: "${dto.userPrompt}"`);
 
     try {
-      // 0. Verificar límite diario de consultas
-      const [todayQueries, dailyLimit] = await Promise.all([
-        this.getDailyQueryCount(userId),
-        this.getDailyQueryLimit(),
+      // 0. Verificar límite diario de tokens
+      const [tokensUsed, tokenLimit] = await Promise.all([
+        this.getDailyTokenUsage(userId),
+        this.getDailyTokenLimit(),
       ]);
-      if (todayQueries >= dailyLimit) {
+
+      if (tokensUsed >= tokenLimit) {
         throw new BadRequestException(
-          `Has alcanzado el límite de ${dailyLimit} consultas por día. Intenta mañana.`,
+          `Has alcanzado el límite de ${tokenLimit.toLocaleString()} tokens por día. Has usado ${tokensUsed.toLocaleString()} tokens. Intenta mañana.`,
         );
       }
 
-      // 1. Crear la consulta en la BD con userId
-      const query = await this.prisma.userQuery.create({
-        data: {
-          userId, // ← NUEVO campo
-          userPrompt: dto.userPrompt,
-          promptCategory: dto.promptCategory,
-          status: 'processing',
-        },
-      });
+      const tokensRemaining = tokenLimit - tokensUsed;
+      this.logger.log(`✅ Usuario tiene ${tokensRemaining.toLocaleString()} tokens disponibles`);
 
-      this.logger.log(`Consulta creada con ID: ${query.id}`);
-
-      // 2. Generar código con múltiples modelos en paralelo
+      // 1. Generar código PRIMERO (antes de guardar en BD)
+      this.logger.log('🚀 Generando código con los modelos...');
       const llmResponses = await this.llmService.generateMultipleCodes({
         prompt: dto.userPrompt,
         provider: LlmProvider.OPENROUTER,
@@ -112,6 +117,20 @@ export class QueriesService {
       });
 
       this.logger.log(`${llmResponses.length} códigos generados exitosamente`);
+
+      // 2. Calcular tokens consumidos en esta generación
+      const tokensConsumedNow = llmResponses.reduce((sum, response) => {
+        return sum + (response.totalTokens || 0);
+      }, 0);
+
+      // Verificar que no excedamos el límite después de esta generación
+      if (tokensUsed + tokensConsumedNow > tokenLimit) {
+        throw new BadRequestException(
+          `Esta generación consumiría ${tokensConsumedNow.toLocaleString()} tokens, lo que excedería tu límite diario de ${tokenLimit.toLocaleString()} tokens. Actualmente has usado ${tokensUsed.toLocaleString()} tokens.`,
+        );
+      }
+
+      this.logger.log(`📊 Tokens consumidos en esta generación: ${tokensConsumedNow.toLocaleString()}`);
 
       // 3. Validar que cada código sea una función
       this.logger.log('🔍 Validando que los códigos sean funciones...');
@@ -125,10 +144,23 @@ export class QueriesService {
       }
       this.logger.log('✅ Todos los códigos son funciones válidas');
 
-      // 4. Guardar cada código generado en la BD
+      // 4. Solo si la generación fue exitosa, crear la consulta en BD
+      const query = await this.prisma.userQuery.create({
+        data: {
+          userId,
+          userPrompt: dto.userPrompt,
+          promptCategory: dto.promptCategory,
+          status: 'processing',
+        },
+      });
+
+      this.logger.log(`Consulta creada con ID: ${query.id}`);
+
+      // 5. Guardar cada código generado en la BD junto con su información de tokens
       const savedCodes = await Promise.all(
         llmResponses.map(async (response) => {
-          return await this.prisma.generatedCode.create({
+          // Crear el código generado
+          const code = await this.prisma.generatedCode.create({
             data: {
               queryId: query.id,
               llmName: response.model,
@@ -137,18 +169,38 @@ export class QueriesService {
               generatedAt: response.generatedAt,
             },
           });
+
+          // Si hay información de tokens, guardarla en la tabla token_usage
+          if (response.totalTokens) {
+            await this.prisma.tokenUsage.create({
+              data: {
+                codeId: code.id,
+                provider: response.provider,
+                model: response.model,
+                promptTokens: response.promptTokens,
+                completionTokens: response.completionTokens,
+                totalTokens: response.totalTokens,
+                estimatedCost: response.estimatedCost,
+              },
+            });
+            this.logger.log(
+              `📊 Tokens guardados para ${response.model}: ${response.totalTokens} tokens`
+            );
+          }
+
+          return code;
         }),
       );
 
       this.logger.log(`${savedCodes.length} códigos guardados en BD`);
 
-      // 4. Actualizar estado de la consulta
+      // 6. Actualizar estado de la consulta
       await this.prisma.userQuery.update({
         where: { id: query.id },
         data: { status: 'completed' },
       });
 
-      // 5. Notificar a los evaluadores que hay nuevo código para evaluar
+      // 7. Notificar a los evaluadores que hay nuevo código para evaluar
       try {
         const user = await this.prisma.user.findUnique({
           where: { id: userId },
@@ -175,7 +227,7 @@ export class QueriesService {
         // No lanzamos error para no afectar la respuesta principal
       }
 
-      // 6. Retornar la consulta completa con los códigos
+      // 8. Retornar la consulta completa con los códigos
       return await this.findOne(query.id, userId);
     } catch (error) {
       this.logger.error(`Error creando consulta: ${error.message}`);
@@ -209,7 +261,11 @@ export class QueriesService {
       this.prisma.userQuery.findMany({
         where: { userId },
         include: {
-          generatedCodes: true,
+          generatedCodes: {
+            include: {
+              tokenUsage: true, // ← Incluir información de tokens
+            },
+          },
         },
         orderBy: {
           createdAt: 'desc',
@@ -247,6 +303,7 @@ export class QueriesService {
         generatedCodes: {
           include: {
             metrics: true,
+            tokenUsage: true, // ← Incluir información de tokens
             qualitativeEvaluations: {  // ← AGREGAR ESTO
               include: {
                 evaluator: {
@@ -315,6 +372,13 @@ export class QueriesService {
         codeContent: code.codeContent,
         generationTimeMs: code.generationTimeMs,
         generatedAt: code.generatedAt,
+        // ← NUEVO: Incluir información de tokens
+        tokenUsage: code.tokenUsage ? {
+          promptTokens: code.tokenUsage.promptTokens,
+          completionTokens: code.tokenUsage.completionTokens,
+          totalTokens: code.tokenUsage.totalTokens,
+          estimatedCost: code.tokenUsage.estimatedCost,
+        } : undefined,
         metrics: code.metrics ? {
           id: code.metrics.id,
           codeId: code.metrics.codeId,
@@ -384,6 +448,7 @@ export class QueriesService {
           },
         },
         metrics: true,
+        tokenUsage: true, // ← Incluir información de tokens
         qualitativeEvaluations: {
           include: {
             evaluator: {

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LlmService } from '../llm/llm.service';
 import { CreateQueryDto } from './dto/create-query.dto';
@@ -71,16 +71,33 @@ export class QueriesService {
   /**
    * Obtiene los tokens restantes del día para el usuario
    */
-  async getRemainingTokens(userId: number): Promise<{ used: number; limit: number; remaining: number }> {
-    const [used, limit] = await Promise.all([
+  async getRemainingTokens(userId: number): Promise<{
+    used: number;
+    limit: number;
+    remaining: number;
+    isGenerationBlocked: boolean;
+  }> {
+    const [used, limit, isGenerationBlocked] = await Promise.all([
       this.getDailyTokenUsage(userId),
       this.getDailyTokenLimit(),
+      this.isCodeGenerationBlocked(),
     ]);
     return {
       used,
       limit,
       remaining: Math.max(0, limit - used),
+      isGenerationBlocked,
     };
+  }
+
+  /**
+   * Verifica si la generación de código está bloqueada
+   */
+  private async isCodeGenerationBlocked(): Promise<boolean> {
+    const setting = await this.prisma.appSettings.findUnique({
+      where: { key: 'blockCodeGeneration' },
+    });
+    return setting?.value === 'true';
   }
 
   /**
@@ -93,7 +110,16 @@ export class QueriesService {
     this.logger.log(`Creando nueva consulta para usuario ${userId}: "${dto.userPrompt}"`);
 
     try {
-      // 0. Verificar límite diario de tokens
+      // 0. Verificar si la generación de código está bloqueada
+      const isBlocked = await this.isCodeGenerationBlocked();
+      if (isBlocked) {
+        this.logger.warn(`🚫 Generación de código bloqueada - Usuario ${userId} intentó generar`);
+        throw new ServiceUnavailableException(
+          'La generación de código está temporalmente deshabilitada. Por favor, intenta más tarde.',
+        );
+      }
+
+      // 1. Verificar límite diario de tokens
       const [tokensUsed, tokenLimit] = await Promise.all([
         this.getDailyTokenUsage(userId),
         this.getDailyTokenLimit(),

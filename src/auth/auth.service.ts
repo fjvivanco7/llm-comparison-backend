@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  ServiceUnavailableException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -30,6 +31,23 @@ export class AuthService {
    */
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
     this.logger.log(`Intentando registrar usuario: ${dto.email}`);
+
+    // Verificar modo mantenimiento (solo para usuarios normales, no admins)
+    const roleToRegister = dto.role || UserRole.USER;
+    if (roleToRegister === UserRole.USER) {
+      const maintenanceSetting = await this.prisma.appSettings.findUnique({
+        where: { key: 'maintenanceMode' },
+      });
+
+      if (maintenanceSetting?.value === 'true') {
+        this.logger.warn(
+          `🚧 Registro bloqueado por modo mantenimiento: ${dto.email}`,
+        );
+        throw new ServiceUnavailableException(
+          'El sistema está en modo mantenimiento. No se permiten nuevos registros. Por favor, intenta más tarde.',
+        );
+      }
+    }
 
     // Verificar si el email ya existe
     const existingUser = await this.prisma.user.findUnique({
@@ -128,6 +146,24 @@ export class AuthService {
         'Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.',
       );
     }
+
+    // ==================== MAINTENANCE MODE CHECK ====================
+    // Bloquear usuarios USER y EVALUATOR, solo ADMIN puede entrar
+    if (user.role === UserRole.USER || user.role === UserRole.EVALUATOR) {
+      const maintenanceSetting = await this.prisma.appSettings.findUnique({
+        where: { key: 'maintenanceMode' },
+      });
+
+      if (maintenanceSetting?.value === 'true') {
+        this.logger.warn(
+          `🚧 Login bloqueado por modo mantenimiento: ${dto.email} (rol: ${user.role})`,
+        );
+        throw new ServiceUnavailableException(
+          'El sistema está en modo mantenimiento. Por favor, intenta más tarde.',
+        );
+      }
+    }
+    // ==================== FIN MAINTENANCE CHECK ====================
 
     // ==================== 2FA CHECK ====================
     if (user.twoFactorEnabled) {

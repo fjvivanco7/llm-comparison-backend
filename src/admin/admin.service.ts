@@ -7,7 +7,8 @@ import { UserRole } from '@prisma/client';
 const DEFAULT_SETTINGS = {
   dailyTokenLimit: { value: '10000', description: 'Límite de tokens diarios por usuario (~5-7 queries con 4 modelos)' },
   maxModelsPerQuery: { value: '5', description: 'Máximo de modelos por consulta' },
-  maintenanceMode: { value: 'false', description: 'Modo mantenimiento activo' },
+  maintenanceMode: { value: 'false', description: 'Modo mantenimiento activo (bloquea login/registro de usuarios)' },
+  blockCodeGeneration: { value: 'false', description: 'Bloquear generación de código (evita consumo de créditos)' },
 };
 
 @Injectable()

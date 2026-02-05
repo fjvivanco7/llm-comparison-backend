@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { LlmModule } from './llm/llm.module';
 import { QueriesModule } from './queries/queries.module';
@@ -12,6 +13,7 @@ import { EvaluationModule } from './evaluation/evaluation.module';
 import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { MaintenanceInterceptor } from './auth/interceptors/maintenance.interceptor';
 
 @Module({
   imports: [
@@ -38,6 +40,12 @@ import { NotificationsModule } from './notifications/notifications.module';
     NotificationsModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [
+    // Interceptor global: Modo mantenimiento (bloquea solo usuarios USER)
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: MaintenanceInterceptor,
+    },
+  ],
 })
 export class AppModule {}

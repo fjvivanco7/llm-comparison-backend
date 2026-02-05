@@ -19,9 +19,11 @@ import { AuthResponseDto } from './dto/auth-response.dto';
 import { VerifyTwoFactorDto, DisableTwoFactorDto, TwoFactorLoginDto } from './dto/two-factor.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { SkipMaintenance } from './interceptors/maintenance.interceptor';
 
 @ApiTags('Authentication')
 @Controller('auth')
+@SkipMaintenance() // Auth siempre disponible, incluso en modo mantenimiento
 export class AuthController {
   constructor(
     private readonly authService: AuthService,

@@ -134,7 +134,15 @@ export class QueriesService {
       const tokensRemaining = tokenLimit - tokensUsed;
       this.logger.log(`✅ Usuario tiene ${tokensRemaining.toLocaleString()} tokens disponibles`);
 
-      // 1. Generar código PRIMERO (antes de guardar en BD)
+      // 2. Validar que el prompt solicita una función (ANTES de gastar tokens)
+      const promptValidation = await this.llmService.validatePromptRequestsFunction(dto.userPrompt);
+      if (!promptValidation.isValid) {
+        throw new BadRequestException(
+          `Tu solicitud no parece pedir una función JavaScript. ${promptValidation.reason}. Por favor, reformula tu prompt para solicitar una función específica.`,
+        );
+      }
+
+      // 3. Generar código (después de validar el prompt)
       this.logger.log('🚀 Generando código con los modelos...');
       const llmResponses = await this.llmService.generateMultipleCodes({
         prompt: dto.userPrompt,
@@ -157,18 +165,6 @@ export class QueriesService {
       }
 
       this.logger.log(`📊 Tokens consumidos en esta generación: ${tokensConsumedNow.toLocaleString()}`);
-
-      // 3. Validar que cada código sea una función
-      this.logger.log('🔍 Validando que los códigos sean funciones...');
-      for (const response of llmResponses) {
-        const validation = await this.llmService.validateIsFunction(response.code);
-        if (!validation.isValid) {
-          throw new BadRequestException(
-            `El código generado por ${response.model} no es una función válida: ${validation.reason}`,
-          );
-        }
-      }
-      this.logger.log('✅ Todos los códigos son funciones válidas');
 
       // 4. Solo si la generación fue exitosa, crear la consulta en BD
       const query = await this.prisma.userQuery.create({

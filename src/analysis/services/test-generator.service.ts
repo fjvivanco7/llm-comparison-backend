@@ -103,7 +103,7 @@ export class TestGeneratorService {
 
     const model = this.configService.get<string>(
       'AI_TEST_MODEL',
-      'qwen/qwen-2.5-7b-instruct:free'  // ← MODELO GRATIS POR DEFECTO
+      'nvidia/nemotron-3-nano-30b-a3b:free'  // ← MODELO GRATIS QUE FUNCIONA
     );
 
     const numTests = this.configService.get<number>('AI_TEST_CASES_COUNT', 5);
@@ -151,6 +151,10 @@ export class TestGeneratorService {
         if (!textContent) {
           throw new Error('IA no generó contenido');
         }
+
+        // DEBUG: Ver respuesta raw del modelo
+        this.logger.log(`📄 Respuesta raw del modelo:\n${textContent.substring(0, 1500)}`);
+        this.logger.log(`📄 Longitud de respuesta: ${textContent.length} caracteres`);
 
         const testCases = this.parseTestCasesFromResponse(textContent);
 

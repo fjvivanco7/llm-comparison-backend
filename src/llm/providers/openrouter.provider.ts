@@ -197,6 +197,14 @@ export class OpenRouterProvider implements ILlmProvider {
       return contentStr;
     } catch (error) {
       this.logger.error(`❌ Error en generateRaw: ${error.message}`);
+      this.logger.error(`❌ Modelo usado: ${model}`);
+      if (error.response) {
+        this.logger.error(`❌ Status: ${error.response.status}`);
+        this.logger.error(`❌ Body: ${JSON.stringify(error.response.data || error.response.body)}`);
+      }
+      if (error.cause) {
+        this.logger.error(`❌ Causa: ${JSON.stringify(error.cause)}`);
+      }
       throw error;
     }
   }

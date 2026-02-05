@@ -174,49 +174,58 @@ export class LlmService {
   }
 
   /**
-   * Valida si el código generado es una función JavaScript válida
+   * Valida si el prompt solicita una función JavaScript
+   * Se ejecuta ANTES de generar código para evitar consumir tokens innecesariamente
    */
-  async validateIsFunction(code: string): Promise<{ isValid: boolean; reason: string }> {
-    this.logger.log('🔍 Validando si el código es una función...');
+  async validatePromptRequestsFunction(prompt: string): Promise<{ isValid: boolean; reason: string }> {
+    this.logger.log('🔍 Validando si el prompt solicita una función...');
 
     try {
-      const validationPrompt = `Is this a JavaScript function? External dependencies (mysql, axios, fs, etc.) are allowed.
+      const validationPrompt = `Analyze if this user prompt is asking for a JavaScript FUNCTION.
 
-VALID: function declarations, arrow functions, async functions, exported functions with require/import
-INVALID: React components (JSX), only variables, only classes without exported function
+VALID requests (return true):
+- "Create a function that sorts an array"
+- "Write a function to validate emails"
+- "Implement quicksort algorithm" (implies a function)
+- "Code to calculate prime numbers" (implies a function)
 
-CODE:
-\`\`\`
-${code}
-\`\`\`
+INVALID requests (return false):
+- "Create a React component"
+- "Build a web page"
+- "Write a class for users"
+- "Create an API with Express"
+- Generic questions or non-code requests
+
+USER PROMPT:
+"${prompt}"
 
 Respond ONLY with JSON:
-{"isFunction": true/false, "reason": "brief explanation"}`;
+{"requestsFunction": true/false, "reason": "brief explanation in Spanish"}`;
 
       const response = await this.openRouterProvider.generateRaw(
-        'meta-llama/llama-3.3-70b-instruct:free',
+        'nvidia/nemotron-3-nano-30b-a3b:free',
         validationPrompt,
       );
 
       // Parsear respuesta
-      const jsonMatch = response.match(/\{[\s\S]*"isFunction"[\s\S]*\}/);
+      const jsonMatch = response.match(/\{[\s\S]*"requestsFunction"[\s\S]*\}/);
       if (!jsonMatch) {
         this.logger.warn('⚠️ No se pudo parsear respuesta de validación, asumiendo válido');
         return { isValid: true, reason: 'No se pudo validar, asumiendo válido' };
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
-      const isValid = parsed.isFunction === true;
+      const isValid = parsed.requestsFunction === true;
 
-      this.logger.log(`${isValid ? '✅' : '❌'} Validación: ${parsed.reason}`);
+      this.logger.log(`${isValid ? '✅' : '❌'} Validación de prompt: ${parsed.reason}`);
 
       return {
         isValid,
-        reason: parsed.reason || (isValid ? 'Es una función válida' : 'No es una función'),
+        reason: parsed.reason || (isValid ? 'El prompt solicita una función' : 'El prompt no solicita una función'),
       };
     } catch (error) {
-      this.logger.error(`Error en validación: ${error.message}`);
-      // En caso de error, permitir el código para no bloquear
+      this.logger.error(`Error en validación de prompt: ${error.message}`);
+      // En caso de error, permitir para no bloquear
       return { isValid: true, reason: 'Error en validación, asumiendo válido' };
     }
   }

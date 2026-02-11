@@ -293,15 +293,23 @@ export class AnalysisService {
       100 - (metrics.cyclomaticComplexity - 1) * 10,
     );
 
-    // Líneas de código (menos es mejor, pero penalizar demasiado poco)
+    // Líneas de código: curva en U
+    // Muy corto (< 5 líneas) penaliza igual que muy largo — indica código incompleto
+    const loc = metrics.linesOfCode;
     const locScore =
-      metrics.linesOfCode < 10
-        ? 100
-        : metrics.linesOfCode < 20
-          ? 90
-          : metrics.linesOfCode < 50
-            ? 80
-            : 70;
+      loc < 3
+        ? 30   // Código trivial/incompleto
+        : loc < 5
+          ? 50  // Demasiado corto para ser una solución real
+          : loc < 10
+            ? 70  // Corto pero puede ser válido
+            : loc < 30
+              ? 100 // Rango óptimo
+              : loc < 60
+                ? 85  // Aceptable
+                : loc < 100
+                  ? 70  // Largo
+                  : 50; // Demasiado largo
 
     // Profundidad de anidamiento (menos es mejor)
     const nestingScore = Math.max(0, 100 - (metrics.nestingDepth - 1) * 20);

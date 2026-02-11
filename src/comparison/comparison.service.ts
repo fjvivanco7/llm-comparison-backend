@@ -53,14 +53,26 @@ export class ComparisonService {
 
     // Crear comparaciones
     const comparisons: LlmComparison[] = codesWithMetrics
-      .map((code) => ({
-        llmName: code.llmName,
-        codeId: code.id,
-        codeSnippet: this.getCodeSnippet(code.codeContent),
-        totalScore: code.metrics?.totalScore || 0,
-        categoryScores: this.extractCategoryScores(code.metrics),
-        rank: 0, // Se calculará después
-      }))
+      .map((code) => {
+        const linesOfCode = code.metrics?.linesOfCode ?? 0;
+        const passRate = code.metrics?.passRate ?? 0;
+        let totalScore = code.metrics?.totalScore || 0;
+
+        // Penalización por código trivialmente corto (< 5 LOC) que no pasa tests:
+        // Un código de 2-3 líneas con passRate 0 no debería ganar por métricas de mantenibilidad.
+        if (linesOfCode < 5 && passRate === 0) {
+          totalScore = Math.min(totalScore, 30);
+        }
+
+        return {
+          llmName: code.llmName,
+          codeId: code.id,
+          codeSnippet: this.getCodeSnippet(code.codeContent),
+          totalScore,
+          categoryScores: this.extractCategoryScores(code.metrics),
+          rank: 0, // Se calculará después
+        };
+      })
       .sort((a, b) => b.totalScore - a.totalScore); // Ordenar por score
 
     // Asignar rankings

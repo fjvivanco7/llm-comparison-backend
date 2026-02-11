@@ -75,8 +75,13 @@ export class SecurityService {
       const regexAnalysis = this.analyzeWithPatterns(code);
       const regexIssues = regexAnalysis.issues;
 
-      // Combinar resultados
-      const allIssues = [...eslintIssues, ...regexIssues];
+      // Combinar resultados deduplicando por tipo+mensaje para no doble-contar
+      // si ESLint y regex detectan el mismo problema
+      const eslintTypes = new Set(eslintIssues.map((i) => i.type));
+      const filteredRegexIssues = regexIssues.filter(
+        (i) => !eslintTypes.has(i.type),
+      );
+      const allIssues = [...eslintIssues, ...filteredRegexIssues];
 
       // Contar por tipo
       const counts = {
